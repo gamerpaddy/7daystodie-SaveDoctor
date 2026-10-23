@@ -101,13 +101,15 @@
     gl.attachShader(prog, mk(gl.FRAGMENT_SHADER, 'precision mediump float;varying vec3 vC;void main(){gl_FragColor=vec4(vC,1.0);}'));
     gl.linkProgram(prog); gl.useProgram(prog);
     const aPos = gl.getAttribLocation(prog, 'aPos'), aCol = gl.getAttribLocation(prog, 'aCol'), uVP = gl.getUniformLocation(prog, 'uVP');
-    const vbo = gl.createBuffer();
+    const vbo = gl.createBuffer(), lbo = gl.createBuffer();
     gl.enable(gl.DEPTH_TEST);
 
     // ── state
     const S3 = { radius: 1, hideTerrain: false, hidden: new Set(), grid: null, W: 0, D: 0, x0: 0, z0: 0, names: {}, clip: [0, 0, 0, 0, 0, 0], vcount: 0, yMax: 0, counts: new Map() };
     const cam = { yaw: 0.7, pitch: 0.6, dist: 60, target: [8, 40, -8] };
     let dirty = true, meshDirty = true;
+    // block editing state
+    const E = { tool: 'orbit', type: 0, rot: 0, brush: 1, fillMode: 'any', pending: [], undo: [], boxA: null, sel: null, hover: null, palette: null, overlayN: 0 };
 
     const fmtSel = h('select', {}, h('option', { value: 'glb' }, 'glTF binary (.glb) – Blender, Unity, Godot, web'), h('option', { value: 'obj' }, 'Wavefront OBJ + MTL (.zip)'), h('option', { value: 'ply' }, 'PLY with vertex colours (.ply)'));
     const legend = h('div', { style: 'max-height:240px;overflow:auto;margin-top:6px' });
@@ -115,6 +117,163 @@
     const sizeSel = h('select', { onchange: () => { S3.radius = Number(sizeSel.value); load(); } }, [[0, 'this chunk only'], [1, '3 × 3 chunks'], [2, '5 × 5 chunks'], [3, '7 × 7 chunks']].map(([v, l]) => h('option', { value: v, selected: v === S3.radius }, l)));
     sizeSel.value = String(S3.radius);
     const chkTerr = h('input', { type: 'checkbox', onchange: () => { S3.hideTerrain = chkTerr.checked; applyVisibility(); meshDirty = true; dirty = true; } });
+    // ── block editor panel
+    const TOOLS = [['orbit', '🖱 View only'], ['add', '＋ Add block'], ['remove', '✕ Remove'], ['paint', '🖌 Paint (replace)'], ['fill', '▦ Fill box'], ['pick', '⊙ Pick type'], ['select', '⬚ Select area']];
+    const toolSel = h('div', { style: 'display:flex;flex-wrap:wrap;gap:4px;margin:4px 0' });
+    const blockSearch = h('input', { type: 'text', placeholder: 'search block name…', style: 'width:100%' });
+    const blockList = h('select', { size: 7, style: 'width:100%;margin-top:4px' });
+    const curBlock = h('div', { class: 'mono', style: 'font-size:12px;margin:2px 0' }, 'no block selected');
+    const rotIn = h('input', { type: 'number', min: 0, max: 31, value: 0, style: 'width:56px', onchange: () => { E.rot = Math.max(0, Math.min(31, Number(rotIn.value) || 0)); } });
+    const brushIn = h('select', { onchange: () => { E.brush = Number(brushIn.value); } }, [1, 2, 3, 5].map(n => h('option', { value: n }, n + '×' + n + '×' + n)));
+    const modeIn = h('select', { onchange: () => { E.fillMode = modeIn.value; } }, [['any', 'replace everything'], ['air', 'only fill empty space'], ['solid', 'only replace existing blocks']].map(([v, l]) => h('option', { value: v }, l)));
+    const pendBox = h('div', { class: 'muted', style: 'font-size:12px;margin:6px 0' }, '');
+    const selBox = h('div', { class: 'mono', style: 'font-size:12px;margin:4px 0' }, '');
+    const btnApply = h('button', { class: 'primary', onclick: () => guarded(applyPending) }, 'Write changes to save');
+    const btnUndo = h('button', { onclick: () => undoPending() }, '↶ Undo');
+    const btnDiscard = h('button', { onclick: () => guarded(discardPending) }, 'Discard all');
+    const editBox = h('div', { style: 'border-top:1px solid var(--line);margin-top:8px;padding-top:6px' },
+      h('h3', {}, 'Edit blocks'),
+      toolSel,
+      h('div', { class: 'field' }, h('label', {}, 'Block to place'), blockSearch, blockList, curBlock),
+      h('div', { class: 'row', style: 'gap:8px;align-items:center' }, h('label', { class: 'muted' }, 'rotation'), rotIn, h('label', { class: 'muted' }, 'brush'), brushIn),
+      h('div', { class: 'field' }, h('label', {}, 'Fill box mode'), modeIn),
+      selBox,
+      h('div', { class: 'row' }, h('button', { onclick: () => { E.sel = null; E.boxA = null; updateEditUi(); overlay(); } }, 'Clear selection'), h('button', { onclick: () => selToSchematic() }, 'Copy selection → schematic…')),
+      pendBox,
+      h('div', { class: 'row' }, btnApply, btnUndo, btnDiscard),
+      h('div', { class: 'muted', style: 'font-size:12px;margin-top:4px' }, 'Click a block face to edit. Left-drag still orbits. Changes are previewed here and only written when you press "Write changes". The game / server must be stopped. Chests, lamps, doors and other multi-part or tile-entity blocks cannot be placed from scratch – copy them with schematics.'));
+    for (const [id, label] of TOOLS) toolSel.append(h('button', { 'data-tool': id, onclick: () => { E.tool = id; E.boxA = null; updateEditUi(); overlay(); } }, label));
+    function updateEditUi() {
+      for (const b of toolSel.children) b.classList.toggle('primary', b.dataset.tool === E.tool);
+      const nm = E.type ? (S3.pal?.get(E.type)?.name || S3.names[E.type] || 'block#' + E.type) : 'air (erase)';
+      curBlock.textContent = `${nm}  (id ${E.type})`;
+      const n = E.pending.length;
+      pendBox.textContent = n ? `${n} pending edit operation(s) – not saved yet` : 'no pending edits';
+      btnApply.disabled = btnUndo.disabled = btnDiscard.disabled = !n;
+      selBox.textContent = E.sel ? `selection: x ${E.sel.x1}…${E.sel.x2}  y ${E.sel.y1}…${E.sel.y2}  z ${E.sel.z1}…${E.sel.z2}  (${(E.sel.x2 - E.sel.x1 + 1) * (E.sel.y2 - E.sel.y1 + 1) * (E.sel.z2 - E.sel.z1 + 1)} blocks)` : (E.boxA ? 'click the opposite corner…' : '');
+    }
+    async function loadPalette() {
+      if (ro) return;
+      if (!window.__palette) window.__palette = await api('/api/world/palette');
+      const pal = window.__palette; E.palette = pal.blocks;
+      S3.pal = new Map(pal.blocks.map(b => [b[0], { name: b[1], group: b[2], ok: b[3] === 1, terrain: b[4] === 1 }]));
+      fillBlockList();
+    }
+    function fillBlockList() {
+      const q = blockSearch.value.trim().toLowerCase();
+      blockList.replaceChildren();
+      blockList.append(h('option', { value: 0 }, '— air (erase) —'));
+      let n = 0;
+      for (const b of E.palette || []) {
+        if (q && !b[1].toLowerCase().includes(q)) continue;
+        const o = h('option', { value: b[0], title: b[2] }, b[1] + (b[3] ? '' : '   (copy only)'));
+        if (!b[3]) o.style.opacity = '.5';
+        blockList.append(o);
+        if (++n >= 300) { blockList.append(h('option', { disabled: true }, '… refine the search')); break; }
+      }
+    }
+    blockSearch.oninput = () => fillBlockList();
+    blockList.onchange = () => {
+      const id = Number(blockList.value); const info = S3.pal?.get(id);
+      if (id && info && !info.ok) { toast(info.name + ' cannot be placed from scratch (multi-part block or needs a tile entity) – use schematics to copy it.', 'err'); return; }
+      E.type = id; updateEditUi();
+    };
+    function selToSchematic() {
+      if (!E.sel) { toast('Select an area first (tool "Select area", click two corners).', 'err'); return; }
+      if (window.openSchematicDialog) { const s = { ...E.sel }; close(); window.openSchematicDialog(s); } else toast('Schematic tools are not available.', 'err');
+    }
+    function cellIdx(x, y, z) { return (y * S3.D + z) * S3.W + x; }
+    function inGrid(x, y, z) { return x >= 0 && x < S3.W && z >= 0 && z < S3.D && y >= 0 && y < 256; }
+    function setLocal(x, y, z, id, rec) {
+      if (!inGrid(x, y, z)) return;
+      const i = cellIdx(x, y, z), old = S3.grid[i]; if (old === id) return;
+      rec.push([i, old]); S3.grid[i] = id;
+      if (old) { const c = (S3.counts.get(old) || 1) - 1; if (c <= 0) S3.counts.delete(old); else S3.counts.set(old, c); }
+      if (id) { S3.counts.set(id, (S3.counts.get(id) || 0) + 1); if (y > S3.yMax) S3.yMax = y; if (!S3.names[id]) S3.names[id] = S3.pal?.get(id)?.name || 'block#' + id; }
+    }
+    function queueOp(op) {
+      const rec = [];
+      const wx = S3.x0, wz = S3.z0;
+      if (op.op === 'set') setLocal(op.x - wx, op.y, op.z - wz, op.type, rec);
+      else {
+        const only = op.only || 'any';
+        for (let y = Math.max(0, op.y1); y <= Math.min(255, op.y2); y++) for (let z = op.z1; z <= op.z2; z++) for (let x = op.x1; x <= op.x2; x++) {
+          const lx = x - wx, lz = z - wz; if (!inGrid(lx, y, lz)) continue;
+          const cur = S3.grid[cellIdx(lx, y, lz)];
+          if (only === 'air' ? cur !== 0 : only === 'solid' ? cur === 0 : (only !== 'any' && cur !== Number(only))) continue;
+          setLocal(lx, y, lz, op.type, rec);
+        }
+      }
+      E.pending.push(op); E.undo.push(rec);
+      applyVisibility(); buildLegend(); updateEditUi(); meshDirty = true; dirty = true;
+    }
+    function undoPending() {
+      if (!E.pending.length) return; E.pending.pop(); const rec = E.undo.pop();
+      for (let k = rec.length - 1; k >= 0; k--) {
+        const [i, old] = rec[k]; const cur = S3.grid[i];
+        if (cur) { const c = (S3.counts.get(cur) || 1) - 1; if (c <= 0) S3.counts.delete(cur); else S3.counts.set(cur, c); }
+        S3.grid[i] = old; if (old) S3.counts.set(old, (S3.counts.get(old) || 0) + 1);
+      }
+      buildLegend(); updateEditUi(); meshDirty = true; dirty = true;
+    }
+    async function discardPending() { E.pending = []; E.undo = []; updateEditUi(); await load(); }
+    async function applyPending() {
+      if (!E.pending.length) return;
+      const r = await api('/api/world/edit', { body: { ops: E.pending } });
+      toast(r.message); E.pending = []; E.undo = []; updateEditUi(); await load();
+      if (window.afterWorldEdit) window.afterWorldEdit(rel);
+    }
+    function brushBox(cx, cy, cz) { const n = E.brush, lo = -Math.floor((n - 1) / 2), hi = lo + n - 1; return [cx + lo, cy + lo, cz + lo, cx + hi, cy + hi, cz + hi]; }
+    function editClick(hit) {
+      const W = (x, z) => [x + S3.x0, z + S3.z0];
+      if (E.tool === 'pick') { if (hit.id) { E.type = hit.id; updateEditUi(); } return; }
+      if (E.tool === 'add' || E.tool === 'remove' || E.tool === 'paint') {
+        const base = E.tool === 'add' ? [hit.px, hit.py, hit.pz] : [hit.x, hit.y, hit.z];
+        const [x1, y1, z1, x2, y2, z2] = brushBox(...base);
+        const type = E.tool === 'remove' ? 0 : E.type;
+        if (E.tool !== 'remove' && !type) { toast('Choose a block to place first (search above).', 'err'); return; }
+        if (E.brush === 1) { const [wx, wz] = W(base[0], base[2]); queueOp({ op: 'set', x: wx, y: base[1], z: wz, type, rot: E.rot }); }
+        else { const [wx1, wz1] = W(x1, z1), [wx2, wz2] = W(x2, z2); queueOp({ op: 'fill', x1: wx1, y1, z1: wz1, x2: wx2, y2, z2: wz2, type, rot: E.rot, only: E.tool === 'add' ? 'air' : 'solid' }); }
+        return;
+      }
+      if (E.tool === 'fill' || E.tool === 'select') {
+        const c = [hit.x, hit.y, hit.z];
+        if (!E.boxA) { E.boxA = c; updateEditUi(); overlay(); return; }
+        const a = E.boxA; E.boxA = null;
+        const [wxa, wza] = W(a[0], a[2]), [wxb, wzb] = W(c[0], c[2]);
+        const box = { x1: Math.min(wxa, wxb), y1: Math.min(a[1], c[1]), z1: Math.min(wza, wzb), x2: Math.max(wxa, wxb), y2: Math.max(a[1], c[1]), z2: Math.max(wza, wzb) };
+        if (E.tool === 'select') { E.sel = box; updateEditUi(); overlay(); return; }
+        queueOp({ op: 'fill', ...box, type: E.type, rot: E.rot, only: E.fillMode });
+        overlay();
+      }
+    }
+    // outline overlay (hover cell, pending corner, selection)
+    const lineBuf = new ArrayBuffer(1 << 16), lf = new Float32Array(lineBuf), lu = new Uint32Array(lineBuf);
+    function overlay() {
+      let n = 0;
+      const box = (x1, y1, z1, x2, y2, z2, rgb) => {
+        const col = ((255 << 24) | (rgb[2] << 16) | (rgb[1] << 8) | rgb[0]) >>> 0;
+        const X = [x1, x2 + 1], Y = [y1, y2 + 1], Z = [-z1, -(z2 + 1)];
+        const edges = [[0, 0, 0, 1, 0, 0], [0, 1, 0, 1, 1, 0], [0, 0, 1, 1, 0, 1], [0, 1, 1, 1, 1, 1], [0, 0, 0, 0, 1, 0], [1, 0, 0, 1, 1, 0], [0, 0, 1, 0, 1, 1], [1, 0, 1, 1, 1, 1], [0, 0, 0, 0, 0, 1], [1, 0, 0, 1, 0, 1], [0, 1, 0, 0, 1, 1], [1, 1, 0, 1, 1, 1]];
+        for (const e of edges) for (const [a, b, c] of [[e[0], e[1], e[2]], [e[3], e[4], e[5]]]) {
+          if ((n + 1) * 4 > lf.length) return;
+          lf[n * 4] = X[a]; lf[n * 4 + 1] = Y[b]; lf[n * 4 + 2] = Z[c]; lu[n * 4 + 3] = col; n++;
+        }
+      };
+      if (E.tool !== 'orbit' && E.hover) {
+        const hv = E.hover;
+        if (E.tool === 'add') { const [a, b, c, d, e, f] = brushBox(hv.px, hv.py, hv.pz); box(a, b, c, d, e, f, [120, 255, 140]); }
+        else if (E.tool === 'remove') { const [a, b, c, d, e, f] = brushBox(hv.x, hv.y, hv.z); box(a, b, c, d, e, f, [255, 90, 90]); }
+        else if (E.tool === 'paint') { const [a, b, c, d, e, f] = brushBox(hv.x, hv.y, hv.z); box(a, b, c, d, e, f, [90, 170, 255]); }
+        else box(hv.x, hv.y, hv.z, hv.x, hv.y, hv.z, [255, 255, 255]);
+      }
+      if (E.boxA) box(E.boxA[0], E.boxA[1], E.boxA[2], E.boxA[0], E.boxA[1], E.boxA[2], [255, 214, 64]);
+      if (E.sel) box(E.sel.x1 - S3.x0, E.sel.y1, E.sel.z1 - S3.z0, E.sel.x2 - S3.x0, E.sel.y2, E.sel.z2 - S3.z0, [64, 220, 255]);
+      E.overlayN = n;
+      gl.bindBuffer(gl.ARRAY_BUFFER, lbo); gl.bufferData(gl.ARRAY_BUFFER, new Uint8Array(lineBuf, 0, n * 16), gl.DYNAMIC_DRAW);
+      dirty = true;
+    }
+
     panel.append(
       h('div', { style: 'display:flex;justify-content:space-between;align-items:center' }, h('b', {}, '3D chunk viewer'), h('button', { onclick: close }, 'Close (Esc)')),
       h('div', { class: 'muted', style: 'font-size:12px;margin:4px 0 8px' }, `${rel.split('/').pop()} · chunk (${center.chunkX}, ${center.chunkZ})`),
@@ -125,6 +284,7 @@
       h('h3', {}, 'Export this view as a 3D model'),
       h('div', { class: 'row' }, fmtSel, h('button', { class: 'primary', onclick: () => guarded(async () => exportMesh(fmtSel.value)) }, '⬇ Export')),
       h('div', { class: 'muted', style: 'font-size:12px' }, 'Exports exactly what you see (clipping, hidden blocks, area). One material per block type, 1 unit = 1 block, Y up, centred on the loaded area.'),
+      ...(ro ? [] : [editBox]),
       h('h3', {}, 'Blocks (click to hide / show)'), legend,
       h('div', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, 'Left-drag: orbit · right-drag / shift-drag: pan · wheel: zoom. Cut faces are closed automatically.'));
 
@@ -187,6 +347,7 @@
       Object.assign(S3, { grid, W, D, x0: minCx * 16, z0: minCz * 16, names: resp.names, yMax, counts });
       applyVisibility(); buildLegend(); resetClip(); resetView();
       status.textContent = `${resp.chunks.length} chunk(s) · ${W}×${D} blocks · top y=${yMax}`;
+      overlay();
     }
 
     // ── meshing
@@ -241,13 +402,23 @@
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.clearColor(0.043, 0.055, 0.07, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       if (meshDirty) { buildMesh(); meshDirty = false; }
-      if (!S3.vcount) return;
+      if (!S3.vcount && !E.overlayN) return;
       gl.useProgram(prog);
       gl.uniformMatrix4fv(uVP, false, viewProj().vp);
-      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-      gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 16, 0);
-      gl.enableVertexAttribArray(aCol); gl.vertexAttribPointer(aCol, 4, gl.UNSIGNED_BYTE, true, 16, 12);
-      gl.drawArrays(gl.TRIANGLES, 0, S3.vcount);
+      if (S3.vcount) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+        gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 16, 0);
+        gl.enableVertexAttribArray(aCol); gl.vertexAttribPointer(aCol, 4, gl.UNSIGNED_BYTE, true, 16, 12);
+        gl.drawArrays(gl.TRIANGLES, 0, S3.vcount);
+      }
+      if (E.overlayN) {
+        gl.disable(gl.DEPTH_TEST);
+        gl.bindBuffer(gl.ARRAY_BUFFER, lbo);
+        gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 16, 0);
+        gl.enableVertexAttribArray(aCol); gl.vertexAttribPointer(aCol, 4, gl.UNSIGNED_BYTE, true, 16, 12);
+        gl.drawArrays(gl.LINES, 0, E.overlayN);
+        gl.enable(gl.DEPTH_TEST);
+      }
     }
     (function loop() { if (stopped) return; if (dirty) { dirty = false; try { draw(); } catch (e) { console.error(e); } } requestAnimationFrame(loop); })();
     new ResizeObserver(() => { dirty = true; }).observe(stage);
@@ -255,12 +426,20 @@
     // ── input
     let drag = null;
     canvas.addEventListener('contextmenu', e => e.preventDefault());
-    canvas.addEventListener('mousedown', e => { drag = { x: e.clientX, y: e.clientY, pan: e.button !== 0 || e.shiftKey }; });
-    window.addEventListener('mouseup', () => { drag = null; });
+    canvas.addEventListener('mousedown', e => { drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false, pan: e.button !== 0 || e.shiftKey }; });
+    window.addEventListener('mouseup', e => {
+      const d = drag; drag = null;
+      if (stopped) return;
+      if (d && !d.moved && !d.pan && E.tool !== 'orbit' && !ro && e.target === canvas) {
+        const hit = cast(e);
+        if (hit) { try { editClick(hit); } catch (er) { toast(er.message, 'err'); } }
+      }
+    });
     window.addEventListener('mousemove', e => {
       if (stopped) return;
       if (drag) {
         const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+        if (Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) > 4) drag.moved = true;
         if (drag.pan) {
           const { eye } = viewProj(); let fx = cam.target[0] - eye[0], fy = cam.target[1] - eye[1], fz = cam.target[2] - eye[2]; const l = Math.hypot(fx, fy, fz); fx /= l; fy /= l; fz /= l;
           let rx = fy * 0 - fz * 1, ry = fz * 0 - fx * 0, rz = fx * 1 - fy * 0; const rl = Math.hypot(rx, ry, rz) || 1; rx /= rl; ry /= rl; rz /= rl;
@@ -273,27 +452,34 @@
     canvas.addEventListener('wheel', e => { e.preventDefault(); cam.dist *= Math.exp(e.deltaY * 0.0012); cam.dist = Math.max(2, Math.min(5000, cam.dist)); dirty = true; }, { passive: false });
 
     function pick(e) {
-      if (!S3.grid) return;
+      const hit = cast(e);
+      if (hit) hover.textContent = `${S3.names[hit.id] || 'block#' + hit.id}  (id ${hit.id})   x ${hit.x + S3.x0}  y ${hit.y}  z ${hit.z + S3.z0}`; else hover.textContent = '';
+      if (E.tool !== 'orbit') { E.hover = hit; overlay(); }
+    }
+    function cast(e) {
+      if (!S3.grid) return null;
       const r = canvas.getBoundingClientRect(); const nx = ((e.clientX - r.left) / r.width) * 2 - 1, ny = 1 - ((e.clientY - r.top) / r.height) * 2;
-      if (nx < -1 || nx > 1 || ny < -1 || ny > 1) { hover.textContent = ''; return; }
-      const { vp } = viewProj(); const inv = M.invert(vp); if (!inv) return;
+      if (nx < -1 || nx > 1 || ny < -1 || ny > 1) return null;
+      const { vp } = viewProj(); const inv = M.invert(vp); if (!inv) return null;
       const a = M.mulVec(inv, [nx, ny, -1, 1]), b = M.mulVec(inv, [nx, ny, 1, 1]);
       const o = [a[0] / a[3], a[1] / a[3], -a[2] / a[3]], t = [b[0] / b[3], b[1] / b[3], -b[2] / b[3]]; // render z = -grid z
       let dir = [t[0] - o[0], t[1] - o[1], t[2] - o[2]]; const dl = Math.hypot(...dir); dir = dir.map(v => v / dl);
       const { grid, W, D, clip } = S3; const [cx0, cx1, cy0, cy1, cz0, cz1] = clip;
       let p = o.slice(), x = Math.floor(p[0]), y = Math.floor(p[1]), z = Math.floor(p[2]);
+      let lx = x, ly = y, lz = z;
       const step = dir.map(v => v > 0 ? 1 : -1), tD = dir.map(v => Math.abs(1 / (v || 1e-9)));
       const tM = [0, 1, 2].map(i => { const c = [x, y, z][i]; const edge = dir[i] > 0 ? c + 1 - p[i] : p[i] - c; return edge * tD[i]; });
       for (let i = 0; i < 1200; i++) {
         if (x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1 && z >= cz0 && z <= cz1) {
           const id = grid[(y * D + z) * W + x];
-          if (id && vis[id]) { hover.textContent = `${S3.names[id] || 'block#' + id}  (id ${id})   x ${x + S3.x0}  y ${y}  z ${z + S3.z0}`; return; }
+          if (id && vis[id]) return { x, y, z, id, px: lx, py: ly, pz: lz };
         }
+        lx = x; ly = y; lz = z;
         const m = tM[0] < tM[1] ? (tM[0] < tM[2] ? 0 : 2) : (tM[1] < tM[2] ? 1 : 2);
         if (m === 0) { x += step[0]; tM[0] += tD[0]; } else if (m === 1) { y += step[1]; tM[1] += tD[1]; } else { z += step[2]; tM[2] += tD[2]; }
         if (x < -2 || x > W + 2 || z < -2 || z > D + 2 || y < -2 || y > 260) { if (i > 4 && ((step[0] > 0 && x > W) || (step[0] < 0 && x < 0) || (step[2] > 0 && z > D) || (step[2] < 0 && z < 0)) && (y < 0 || y > 256)) break; }
       }
-      hover.textContent = '';
+      return null;
     }
 
     // ── export
@@ -388,6 +574,7 @@
       toast(`Exported ${nq.toLocaleString()} faces in ${groups.size} materials (${base}).`);
     }
 
-    try { await load(); } catch (e) { toast('3D load failed: ' + e.message, 'err'); close(); }
+    updateEditUi();
+    try { await load(); loadPalette().catch(er => toast('Block list: ' + er.message, 'err')); } catch (e) { toast('3D load failed: ' + e.message, 'err'); close(); }
   };
 })();

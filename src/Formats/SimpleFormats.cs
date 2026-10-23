@@ -100,6 +100,8 @@ public sealed class NameIdMapHandler : FormatHandler
                     a.Add(Sev.Info, "unknown-names", $"{unknown.Count} entries are not defined by the current game configs (removed mod?): " +
                         string.Join(", ", unknown.Take(8).Select(u => u.Name)) + (unknown.Count > 8 ? ", …" : ""));
                     a.Info["unknownNames"] = unknown.Select(u => u.Name).Take(200).ToList();
+                    a.Repairs.Add(new RepairOption("prune-unknown", $"Remove the {unknown.Count} unknown entr{(unknown.Count == 1 ? "y" : "ies")} that nothing uses",
+                        "Deletes entries the current game configs do not define (leftovers of removed mods) – but only if no player, container, vehicle, drone or block in the world still uses that id; used ones are kept and reported. Harmless to leave in place, this just tidies the table.", false));
                 }
             }
         }
@@ -148,7 +150,51 @@ public sealed class NameIdMapHandler : FormatHandler
             ctx.WriteFile(rel, m.Build(), "nim-dedupe");
             return $"Removed {removed} duplicate/empty entries.";
         }
+        if (action == "prune-unknown")
+        {
+            bool isItems = rel.Contains("item", StringComparison.OrdinalIgnoreCase);
+            var known = ReadNames(ctx, isItems ? "ConfigsDump/items.xml" : "ConfigsDump/blocks.xml", isItems ? "item" : "block");
+            if (isItems) foreach (var n in ReadNames(ctx, "ConfigsDump/item_modifiers.xml", "item_modifier")) known.Add(n);
+            if (known.Count == 0) throw new InvalidOperationException("The server's config dump is missing, so unknown names cannot be told apart.");
+            var unknown = m.Entries.Where(e => !known.Contains(e.Name) && !known.Contains(e.Name.Split(':')[0])).ToList();
+            var used = UsedIds(ctx, isItems);
+            var drop = unknown.Where(e => !used.Contains(e.Id)).ToList();
+            var kept = unknown.Count - drop.Count;
+            if (drop.Count == 0) return $"Nothing removed – all {unknown.Count} unknown entr{(unknown.Count == 1 ? "y is" : "ies are")} still used somewhere in the save.";
+            var dropSet = drop.ToHashSet();
+            m.Entries = m.Entries.Where(e => !dropSet.Contains(e)).ToList();
+            ctx.WriteFile(rel, m.Build(), "nim-prune-unknown");
+            return $"Removed {drop.Count} unused entr{(drop.Count == 1 ? "y" : "ies")} ({string.Join(", ", drop.Take(5).Select(d => d.Name))}{(drop.Count > 5 ? ", …" : "")})." + (kept > 0 ? $" {kept} still in use and kept." : "");
+        }
         return base.Repair(ctx, rel, action, args);
+    }
+
+    /// <summary>Ids of items / blocks that players, containers, vehicles, drones or chunks still reference.</summary>
+    static HashSet<int> UsedIds(SaveCtx ctx, bool items)
+    {
+        var used = new HashSet<int>(); var g = ctx.Game;
+        void Item(ItemVal? v) { if (v == null || v.Type == 0) return; used.Add(v.Type); if (v.Mods != null) foreach (var m in v.Mods) Item(m); if (v.Cosmetics != null) foreach (var m in v.Cosmetics) Item(m); }
+        void GridUse(Grid? gr) { if (gr != null) foreach (var st in gr.Items) if (st.Count > 0) Item(st.Item); }
+        foreach (var f in ctx.ListFilesRel().Where(r => r.StartsWith("Player/", StringComparison.OrdinalIgnoreCase) && r.EndsWith(".ttp", StringComparison.OrdinalIgnoreCase)))
+            try { var p = PlayerFile.Parse(ctx.ReadAll(f), g); GridUse(p.Inventory.Grid); GridUse(p.Bag.Grid); GridUse(p.Equipment.Grid); foreach (var st in p.DragAndDrop) if (st.Count > 0) Item(st.Item); }
+            catch { used.UnionWith(Enumerable.Range(0, 0)); }
+        foreach (var f in new[] { "vehicles.dat", "drones.dat" })
+            try
+            {
+                if (!File.Exists(ctx.Abs(f))) continue;
+                foreach (var e in EntityListFile.Parse(ctx.ReadAll(f), g).Entities)
+                {
+                    if (f == "vehicles.dat") { var vd = VehicleDataM.TryParse(e.EntityData, g, out _); GridUse(vd?.Bag); Item(vd?.Item?.Item); }
+                    else { var dd = DroneDataM.TryParse(e.EntityData, g, out _); GridUse(dd?.Bag); Item(dd?.Item); }
+                }
+            }
+            catch { }
+        var ix = WorldIndexer.Get(ctx);
+        for (int i = 0; i < 600 && !ix.Done; i++) Thread.Sleep(200);
+        if (!ix.Done) throw new InvalidOperationException("The world index is still being built – try again in a minute.");
+        if (items) foreach (var c in ix.Containers) foreach (var it in c.Items) used.Add(it.type);
+        else { used.UnionWith(ix.BlockTotals.Keys); foreach (var k in ix.TeBlocks.Keys) if (k > 0) used.Add(k); }
+        return used;
     }
 }
 

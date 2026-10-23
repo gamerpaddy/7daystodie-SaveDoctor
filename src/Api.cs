@@ -8,7 +8,7 @@ using SaveDoctor.Formats;
 
 namespace SaveDoctor;
 
-public static class Api
+public static partial class Api
 {
     sealed class ScanJob
     {
@@ -42,6 +42,8 @@ public static class Api
 
         IResult J(object o) => Results.Json(o);
 
+        MapWorld(app, Need);
+
         // ───────────── state / opening saves ─────────────
         app.MapGet("/api/state", () =>
         {
@@ -67,6 +69,7 @@ public static class Api
             var c = new SaveCtx(path);
             setCtx(c);
             job = null;
+            _ = Task.Run(() => History.MaybeAutoSnapshot(c));
             Log("", "open", c.Root);
             return J(new { ok = true, root = c.Root, name = c.Name });
         });
@@ -76,7 +79,7 @@ public static class Api
             var b = await Body(http);
             var c = Need();
             if (b.TryGetProperty("allowWhileRunning", out var v)) c.AllowWhileRunning = v.GetBoolean();
-            if (b.TryGetProperty("iconDir", out var idir) && idir.GetString() is string ip && Directory.Exists(ip)) IconOverride = ip;
+            if (b.TryGetProperty("iconDir", out var idir) && idir.GetString() is string ip && Directory.Exists(ip)) GameInstall.Override = ip;
             return J(new { ok = true, allowWhileRunning = c.AllowWhileRunning, icons = IconDir() != null });
         });
 
@@ -588,26 +591,9 @@ public static class Api
         return d;
     }
 
-    public static string? IconOverride;
-    static string? iconDirCache;
 
     /// <summary>Data\ItemIcons of the game / dedicated server install (auto-detected, or set via the UI).</summary>
-    static string? IconDir()
-    {
-        if (IconOverride != null && Directory.Exists(IconOverride)) return IconOverride;
-        if (iconDirCache != null && Directory.Exists(iconDirCache)) return iconDirCache;
-        var roots = new List<string>();
-        foreach (var d in DriveInfo.GetDrives().Where(d => d.IsReady))
-            foreach (var rel in new[] { "SteamLibrary\\SteamApps\\common", "SteamLibrary\\steamapps\\common", "Steam\\steamapps\\common", "Program Files (x86)\\Steam\\steamapps\\common", "Program Files\\Steam\\steamapps\\common", "SteamApps\\common" })
-                roots.Add(Path.Combine(d.RootDirectory.FullName, rel));
-        foreach (var r in roots.Where(Directory.Exists))
-            foreach (var g in Directory.EnumerateDirectories(r, "7 Days to Die*"))
-            {
-                var p = Path.Combine(g, "Data", "ItemIcons");
-                if (Directory.Exists(p)) return iconDirCache = p;
-            }
-        return null;
-    }
+    static string? IconDir() => GameInstall.IconDir();
 
     static List<object> FindSaves()
     {

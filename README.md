@@ -35,6 +35,15 @@ SaveDoctor reads every file **with the same rules the game uses** (the formats w
 - **3D chunk viewer** – export what you see as glTF (.glb), OBJ+MTL or PLY (one material per block type, for Blender / Unity / Godot); orbit around a chunk (or 3×3 … 7×7 chunks), clipping planes on all three axes with closed cut faces, hide natural terrain to see only what players built, hover for block names and coordinates.
 <img width="1758" height="1243" alt="firefox_j8pr3K4OkC" src="https://github.com/user-attachments/assets/c58f21d9-f553-447f-ab81-78c4b9f862df" />
 
+**World tools** (sidebar → *World tools*)
+- **3D block editor** – in the 3D chunk viewer: add / remove / paint blocks with a brush, fill boxes, pick a block type from the world, undo; changes are previewed and only written when you press *Write changes*. Heights, stability, density, lighting flag and tile entities are kept consistent, multi-part blocks are removed completely.
+- **Search & statistics** – index of the whole world: find an item in containers, players, vehicles and drones, find a block type, a container type / loot list or creatures; most common blocks, tile entities and items; heat maps of blocks, containers, creatures and items.
+- **Container editor** – edit the contents of chests, cupboards, loot containers etc. inside chunks (icon grid, same as the player inventory), or reset loot so the game rolls new loot when they are opened.
+- **Copy & paste builds** – copy any box of the world (blocks, containers with contents, lamps…) into a schematic library, paste it elsewhere, in the same or another save; import / export `.sdschem` files.
+- **Trim & reset** – shrink a save by removing chunks nobody needs (with a map preview; players, claims, vehicles, power grid, player-owned storage and constructions are kept), reset POIs or loot in an area, drop all damaged chunks.
+- **History & restore** – timeline of every backup, optional automatic snapshots, compare any backup with the current save and restore single files, single chunks, or just a player's items / position.
+- **Players & claims** – land claims, bedrolls and backpacks from `players.xml`; move / add / remove claims (the claim block's owner changes too), hand over all vehicles, drones and claims of a player, copy a character's items / skills from another save.
+
 **Safety**
 - Every write first copies the previous file to `%APPDATA%\7DaysToDie\SaveDoctorBackups\…` (and a "Snapshot backup" button zips the whole save). Everything can be restored from the *Backups* dialog.
 - Writes are atomic (temp file + replace) and every rebuilt file is re-parsed before it is accepted.
@@ -102,8 +111,9 @@ Layout: `src/Core` (save access, backups, game data), `src/Formats` (one handler
 
 ## Limitations
 
-- Tile entities other than the common container type (lights, power blocks, workstations inside chunks) are not decoded deeply; chunks containing them are validated up to their entity data.
-- Editing block contents of containers inside chunks is not supported yet (block replace is).
+- Storage containers inside chunks are fully editable; other tile entities (lights, doors, signs, workstations, vending machines…) are copied and kept intact but not decoded. Chunks that contain vending machines or generators cannot have their tile entities changed.
+- The block editor cannot place blocks that need a tile entity or consist of several parts from scratch (chests, doors, lamps…) – copy them with the schematic tools. Schematics cannot be rotated.
+- Trimming relies on the game regenerating removed chunks from the world seed; check the preview, keep a snapshot, and stop the game first.
 - Chunk colours in the map / 3D view are derived from block names, not from the game's textures.
 
 ## Disclaimer

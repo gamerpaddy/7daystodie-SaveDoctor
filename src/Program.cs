@@ -147,11 +147,12 @@ public static class Server
             return Results.Content(html, "text/html; charset=utf-8");
         });
 
-        app.MapGet("/viewer3d.js", (HttpContext c) =>
-        {
-            c.Response.Headers.CacheControl = "no-store";
-            return Results.Content(ReadEmbedded("wwwroot/viewer3d.js"), "text/javascript; charset=utf-8");
-        });
+        foreach (var script in new[] { "viewer3d.js", "worldtools.js", "schematics.js", "trim.js", "history.js", "players.js" })
+            app.MapGet("/" + script, (HttpContext c) =>
+            {
+                c.Response.Headers.CacheControl = "no-store";
+                return Results.Content(ReadEmbedded("wwwroot/" + script), "text/javascript; charset=utf-8");
+            });
 
         var pre = args.FirstOrDefault(a => !a.StartsWith("--") && Directory.Exists(a));
         if (pre != null) ctx = new SaveCtx(pre);

@@ -141,6 +141,11 @@ canvas.rg{image-rendering:pixelated;border:1px solid var(--line);border-radius:6
 <div id="toasts"></div>
 
 <script src="/viewer3d.js"></script>
+<script src="/worldtools.js"></script>
+<script src="/schematics.js"></script>
+<script src="/trim.js"></script>
+<script src="/history.js"></script>
+<script src="/players.js"></script>
 <script>
 'use strict';
 const TOKEN = '__TOKEN__';
@@ -180,8 +185,8 @@ function toast(msg, kind = 'ok', ms = 5000) {
   const t = h('div', { class: 'toast ' + kind }, msg);
   $('#toasts').append(t); setTimeout(() => t.remove(), kind === 'err' ? Math.max(ms, 9000) : ms);
 }
-function modal(content, onclose) {
-  const m = $('#modal'), box = $('#modalbox'); box.replaceChildren(content); m.classList.add('show');
+function modal(content, onclose, wide) {
+  const m = $('#modal'), box = $('#modalbox'); box.replaceChildren(content); box.style.maxWidth = wide ? 'min(1100px,96vw)' : ''; m.classList.add('show');
   const close = () => { m.classList.remove('show'); onclose && onclose(); };
   m.onclick = e => { if (e.target === m) close(); };
   return close;
@@ -280,6 +285,8 @@ function renderSide(keepScroll) {
   side.append(h('div', { class: 'item' + (S.sel === null ? ' sel' : ''), onclick: () => { S.sel = null; S.analysis = null; S.dirty = false; renderSide(true); renderMain(); } },
     h('span', { class: 'dot ' + (S.scanRunning ? 'run' : overallDot()) }), h('span', { class: 'nm' }, 'Overview'),
     h('span', { class: 'sz' }, S.scanRunning ? ((S.scanDone || 0) + '/' + (S.scanTotal || '?')) : '')));
+  side.append(h('div', { class: 'item' + (S.sel === '@world' ? ' sel' : ''), onclick: () => { S.sel = '@world'; S.analysis = null; S.dirty = false; renderSide(true); renderMain(); } },
+    h('span', { class: 'dot ok' }), h('span', { class: 'nm' }, '🌍 World tools'), h('span', { class: 'sz' }, 'search · edit')));
   const order = ['World', 'Players', 'Regions', 'Game state', 'Explored maps', 'Web map tiles', 'Backup copies', 'Config dumps'];
   const groups = {}; for (const f of S.files) (groups[groupOf(f)] ||= []).push(f);
   for (const g of order) {
@@ -290,10 +297,10 @@ function renderSide(keepScroll) {
     side.append(h('div', { class: 'grp' },
       h('div', { class: 'gh', onclick: () => { S.openGroups[g] = !open; renderSide(true); } }, (open ? '▾ ' : '▸ ') + g,
         h('span', { class: 'cnt' }, bad ? h('span', { class: 'err' }, bad + ' bad ') : '', wrn ? h('span', { class: 'warn' }, wrn + ' warn ') : '', list.length)),
-      open ? list.map(f => {
+      open ? list.filter(f => !(g === 'Players' && /\.ttp\.meta$/i.test(f.rel) && list.some(x => x.rel === f.rel.slice(0, -5)))).map(f => {
         const s = S.scan[f.rel];
         const nm = f.label || (g === 'World' || g === 'Game state' ? f.rel : f.rel.replace(/^(Region|Player)\//, ''));
-        return h('div', { class: 'item' + (S.sel === f.rel ? ' sel' : ''), title: f.rel + (s && s.top ? '\n' + s.top : ''), onclick: () => selectFile(f.rel) },
+        return h('div', { class: 'item' + (S.sel === f.rel || S.sel === f.rel + '.meta' ? ' sel' : ''), title: f.rel + (s && s.top ? '\n' + s.top : ''), onclick: () => selectFile(f.rel) },
           h('span', { class: 'dot ' + (s ? dotClass(s.worst) : (S.scanRunning ? 'run' : '')) }), h('span', { class: 'nm' }, nm), h('span', { class: 'sz' }, fmtSize(f.size)));
       }) : null));
   }
@@ -379,6 +386,7 @@ async function reanalyze(a) {
 }
 function renderMain() {
   const m = $('#main');
+  if (S.sel === '@world') { WT.render(m); return; }
   if (S.sel === null || !S.analysis) { renderOverview(); return; }
   const a = S.analysis;
   m.replaceChildren();
@@ -386,7 +394,9 @@ function renderMain() {
   m.append(h('div', { class: 'row', style: 'margin-bottom:0' },
     h('span', { class: 'dot ' + dotClass(a.worst), style: 'width:14px;height:14px' }),
     h('h1', { style: 'margin:0' }, a.title || a.kind),
-    f && f.label ? h('b', { style: 'font-size:16px' }, f.label) : null, h('span', { class: 'muted mono' }, a.rel), h('span', { class: 'muted' }, fmtSize(a.size) + (f ? ' · ' + f.mtime : ''))));
+    f && f.label ? h('b', { style: 'font-size:16px' }, f.label) : null, h('span', { class: 'muted mono' }, a.rel),
+    /\.ttp$/i.test(a.rel) && S.files.some(x => x.rel === a.rel + '.meta') ? h('a', { href: '#', title: 'The small .meta file next to the player (name, level, distance) that the game rewrites on every save', onclick: e => { e.preventDefault(); selectFile(a.rel + '.meta'); } }, 'info file') : null,
+    /\.ttp\.meta$/i.test(a.rel) ? h('a', { href: '#', onclick: e => { e.preventDefault(); selectFile(a.rel.slice(0, -5)); } }, '← player file') : null, h('span', { class: 'muted' }, fmtSize(a.size) + (f ? ' · ' + f.mtime : ''))));
   m.append(h('div', { class: 'sub' }, a.summary || ''));
   const nIss = a.issues.filter(i => i.sev !== 'Ok').length;
   const tabs = [['issues', 'Check & repair' + (nIss ? ' (' + nIss + ')' : '')]];

@@ -84,7 +84,7 @@ public sealed class SaveCtx
 {
     public string Root { get; }
     public string Name { get; }
-    public string BackupRoot { get; }
+    public string BackupRoot { get; set; }
     GameData game = null!;
     string gameStamp = "";
     DateTime gameChecked = DateTime.MinValue;
@@ -199,13 +199,24 @@ public sealed class SaveCtx
     }
 
     /// <summary>Copy the current version of a file into the backup area. Returns the backup path (or null if the file didn't exist).</summary>
+    string? batchDir, batchReason; int batchDepth;
+
+    /// <summary>Everything written while the returned scope is open is backed up into ONE backup folder (one history entry per operation).</summary>
+    public IDisposable BeginBatch(string reason)
+    {
+        if (batchDepth++ == 0) { batchDir = null; batchReason = reason; }
+        return new BatchScope(this);
+    }
+    sealed class BatchScope : IDisposable { readonly SaveCtx c; bool done; public BatchScope(SaveCtx c) { this.c = c; } public void Dispose() { if (done) return; done = true; if (--c.batchDepth == 0) c.batchDir = null; } }
+
     public string? Backup(string rel, string reason, string? dir = null)
     {
         var src = Abs(rel);
         if (!File.Exists(src)) return null;
-        dir ??= NewBackupDir(reason);
+        dir ??= batchDepth > 0 ? (batchDir ??= NewBackupDir(batchReason ?? reason)) : NewBackupDir(reason);
         var dst = Path.Combine(dir, rel.Replace('/', '\\'));
         Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+        if (batchDepth > 0 && File.Exists(dst)) return dst;      // keep the ORIGINAL when a file is written twice within one operation
         File.Copy(src, dst, true);
         return dst;
     }
