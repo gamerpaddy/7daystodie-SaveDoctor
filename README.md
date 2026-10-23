@@ -32,8 +32,7 @@ SaveDoctor reads every file **with the same rules the game uses** (the formats w
 - **Decorations** (`decoration.7dt`) and **multi-blocks** – all attributes of every record, filter, bulk delete / replace by block type.
 - **Block / item id tables** (`*.nim`), `players.xml`, any XML/JSON text file, and a **hex editor** for everything else.
 - **Region view** – a top-down picture of the real terrain with icons for players, vehicles, drones, waypoints, spawns, land claims, power blocks, containers, zombies and animals; dim chunks a player has not explored; per-chunk export / import / remove; block statistics and "replace block X by Y" (e.g. clean up blocks of a removed mod).
-- **3D chunk viewer** – orbit around a chunk (or 3×3 … 7×7 chunks), clipping planes on all three axes with closed cut faces, hide natural terrain to see only what players built, hover for block names and coordinates.
-<img width="1758" height="1243" alt="firefox_j8pr3K4OkC" src="https://github.com/user-attachments/assets/c58f21d9-f553-447f-ab81-78c4b9f862df" />
+- **3D chunk viewer** – export what you see as glTF (.glb), OBJ+MTL or PLY (one material per block type, for Blender / Unity / Godot); orbit around a chunk (or 3×3 … 7×7 chunks), clipping planes on all three axes with closed cut faces, hide natural terrain to see only what players built, hover for block names and coordinates.
 
 **Safety**
 - Every write first copies the previous file to `%APPDATA%\7DaysToDie\SaveDoctorBackups\…` (and a "Snapshot backup" button zips the whole save). Everything can be restored from the *Backups* dialog.

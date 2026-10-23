@@ -109,6 +109,7 @@
     const cam = { yaw: 0.7, pitch: 0.6, dist: 60, target: [8, 40, -8] };
     let dirty = true, meshDirty = true;
 
+    const fmtSel = h('select', {}, h('option', { value: 'glb' }, 'glTF binary (.glb) – Blender, Unity, Godot, web'), h('option', { value: 'obj' }, 'Wavefront OBJ + MTL (.zip)'), h('option', { value: 'ply' }, 'PLY with vertex colours (.ply)'));
     const legend = h('div', { style: 'max-height:240px;overflow:auto;margin-top:6px' });
     const sliders = h('div');
     const sizeSel = h('select', { onchange: () => { S3.radius = Number(sizeSel.value); load(); } }, [[0, 'this chunk only'], [1, '3 × 3 chunks'], [2, '5 × 5 chunks'], [3, '7 × 7 chunks']].map(([v, l]) => h('option', { value: v, selected: v === S3.radius }, l)));
@@ -121,6 +122,9 @@
       h('label', { style: 'display:flex;gap:6px;align-items:center;margin:4px 0' }, chkTerr, 'Hide natural terrain (terr* blocks) – shows only built things'),
       h('h3', {}, 'Clipping planes'), sliders,
       h('div', { class: 'row' }, h('button', { onclick: () => { resetClip(); } }, 'Reset clipping'), h('button', { onclick: () => { resetView(); } }, 'Reset view')),
+      h('h3', {}, 'Export this view as a 3D model'),
+      h('div', { class: 'row' }, fmtSel, h('button', { class: 'primary', onclick: () => guarded(async () => exportMesh(fmtSel.value)) }, '⬇ Export')),
+      h('div', { class: 'muted', style: 'font-size:12px' }, 'Exports exactly what you see (clipping, hidden blocks, area). One material per block type, 1 unit = 1 block, Y up, centred on the loaded area.'),
       h('h3', {}, 'Blocks (click to hide / show)'), legend,
       h('div', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, 'Left-drag: orbit · right-drag / shift-drag: pan · wheel: zoom. Cut faces are closed automatically.'));
 
@@ -188,9 +192,10 @@
     // ── meshing
     let vbuf = new ArrayBuffer(1 << 22), f32 = new Float32Array(vbuf), u32 = new Uint32Array(vbuf), nv = 0;
     function ensure(extra) { if ((nv + extra) * 4 > f32.length) { const nb = new ArrayBuffer(vbuf.byteLength * 2); new Uint8Array(nb).set(new Uint8Array(vbuf)); vbuf = nb; f32 = new Float32Array(vbuf); u32 = new Uint32Array(vbuf); } }
+    const qids = [], qfaces = [];   // per quad: block id and face index (needed by the exporter)
     function buildMesh() {
       const { grid, W, D, clip } = S3; if (!grid) return;
-      nv = 0;
+      nv = 0; qids.length = 0; qfaces.length = 0;
       const [cx0, cx1, cy0, cy1, cz0, cz1] = clip;
       const solid = (x, y, z) => x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1 && z >= cz0 && z <= cz1 && vis[grid[(y * D + z) * W + x]] === 1;
       const nameCache = new Map();
@@ -200,13 +205,15 @@
         for (let x = cx0; x <= cx1; x++) {
           const id = grid[row + x]; if (!id || !vis[id]) continue;
           const col = colOf(id); const jit = 0.94 + ((x * 73856093 ^ y * 19349663 ^ z * 83492791) & 15) / 16 * 0.1;
-          for (const f of FACES) {
+          for (let fi = 0; fi < 6; fi++) {
+            const f = FACES[fi];
             const nx = x + f.d[0], ny = y + f.d[1], nz = z + f.d[2];
             if (solid(nx, ny, nz)) continue;
             const sh = f.s * jit;
             const r = Math.min(255, col[0] * sh) | 0, g = Math.min(255, col[1] * sh) | 0, b = Math.min(255, col[2] * sh) | 0;
             const packed = (255 << 24) | (b << 16) | (g << 8) | r;
             ensure(6);
+            qids.push(id); qfaces.push(fi);
             const q = f.v;
             for (const k of [0, 1, 2, 0, 2, 3]) {
               const o = nv * 4; f32[o] = x + q[k][0]; f32[o + 1] = y + q[k][1]; f32[o + 2] = -(z + q[k][2]); u32[o + 3] = packed >>> 0; nv++;
@@ -287,6 +294,98 @@
         if (x < -2 || x > W + 2 || z < -2 || z > D + 2 || y < -2 || y > 260) { if (i > 4 && ((step[0] > 0 && x > W) || (step[0] < 0 && x < 0) || (step[2] > 0 && z > D) || (step[2] < 0 && z < 0)) && (y < 0 || y > 256)) break; }
       }
       hover.textContent = '';
+    }
+
+    // ── export
+    function saveBlob(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
+    const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+    const crc32 = d => { let c = 0xFFFFFFFF; for (let i = 0; i < d.length; i++) c = CRC[(c ^ d[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+    function zipStore(files) {
+      const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+      for (const f of files) {
+        const nm = enc.encode(f.name), crc = crc32(f.data), hd = new DataView(new ArrayBuffer(30));
+        hd.setUint32(0, 0x04034b50, true); hd.setUint16(4, 20, true); hd.setUint16(6, 0x0800, true); hd.setUint16(8, 0, true); hd.setUint32(14, crc, true); hd.setUint32(18, f.data.length, true); hd.setUint32(22, f.data.length, true); hd.setUint16(26, nm.length, true);
+        parts.push(hd.buffer, nm, f.data);
+        const ch = new DataView(new ArrayBuffer(46));
+        ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint32(16, crc, true); ch.setUint32(20, f.data.length, true); ch.setUint32(24, f.data.length, true); ch.setUint16(28, nm.length, true); ch.setUint32(42, off, true);
+        central.push(ch.buffer, nm); off += 30 + nm.length + f.data.length;
+      }
+      let csz = 0; for (const c of central) csz += c.byteLength;
+      const end = new DataView(new ArrayBuffer(22)); end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, csz, true); end.setUint32(16, off, true);
+      return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
+    }
+    function exportMesh(fmt) {
+      if (meshDirty) { buildMesh(); meshDirty = false; }
+      const nq = qids.length;
+      if (!nq) { toast('Nothing to export – with the current clipping and filters no blocks are visible.', 'err'); return; }
+      const groups = new Map();
+      for (let q = 0; q < nq; q++) { let g = groups.get(qids[q]); if (!g) groups.set(qids[q], g = []); g.push(q); }
+      const base = rel.split('/').pop().replace(/\.7rg.*$/, '') + '_chunk_' + center.chunkX + '_' + center.chunkZ;
+      const ox = S3.W / 2, oz = -S3.D / 2;
+      const matName = id => ((S3.names[id] || 'block_' + id).replace(/[^A-Za-z0-9_]/g, '_'));
+      const lin = c => Math.pow(c / 255, 2.2);
+      // four corners of a quad, ordered so that the face looks outwards (counter-clockwise)
+      const NORM = FACES.map(f => [f.d[0], f.d[1], -f.d[2]]);
+      const corners = q => {
+        const o = [0, 1, 2, 5].map(k => (q * 6 + k) * 4);
+        const P = o.map(i => [f32[i] - ox, f32[i + 1], f32[i + 2] - oz]);
+        const a = [P[1][0] - P[0][0], P[1][1] - P[0][1], P[1][2] - P[0][2]], b = [P[2][0] - P[0][0], P[2][1] - P[0][1], P[2][2] - P[0][2]];
+        const n = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], d = NORM[qfaces[q]];
+        return (n[0] * d[0] + n[1] * d[1] + n[2] * d[2]) >= 0 ? P : [P[0], P[3], P[2], P[1]];
+      };
+      const f6 = v => (Math.round(v * 1000) / 1000).toString();
+      status.textContent = 'exporting…';
+      if (fmt === 'obj') {
+        const v = [], f = [], mtl = ['# SaveDoctor export'];
+        let vi = 1;
+        for (const [id, qs] of groups) {
+          const c = blockColor(S3.names[id], id), nm = matName(id);
+          mtl.push(`newmtl ${nm}`, `Kd ${f6(lin(c[0]))} ${f6(lin(c[1]))} ${f6(lin(c[2]))}`, 'Ka 0 0 0', 'Ks 0 0 0', 'd 1', '');
+          f.push(`g ${nm}`, `usemtl ${nm}`);
+          for (const q of qs) { for (const p of corners(q)) v.push(`v ${f6(p[0])} ${f6(p[1])} ${f6(p[2])}`); f.push(`f ${vi} ${vi + 1} ${vi + 2} ${vi + 3}`); vi += 4; }
+        }
+        const enc = new TextEncoder();
+        const obj = enc.encode(`# SaveDoctor – ${base}\nmtllib ${base}.mtl\n` + v.join('\n') + '\n' + f.join('\n') + '\n');
+        saveBlob(zipStore([{ name: base + '.obj', data: obj }, { name: base + '.mtl', data: enc.encode(mtl.join('\n')) }]), base + '_obj.zip');
+      } else if (fmt === 'ply') {
+        const verts = [], faces = []; let vi = 0;
+        for (const [id, qs] of groups) {
+          const c = blockColor(S3.names[id], id);
+          for (const q of qs) { for (const p of corners(q)) verts.push(`${f6(p[0])} ${f6(p[1])} ${f6(p[2])} ${c[0]} ${c[1]} ${c[2]}`); faces.push(`4 ${vi} ${vi + 1} ${vi + 2} ${vi + 3}`); vi += 4; }
+        }
+        const txt = `ply\nformat ascii 1.0\ncomment SaveDoctor ${base}\nelement vertex ${verts.length}\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nelement face ${faces.length}\nproperty list uchar int vertex_indices\nend_header\n` + verts.join('\n') + '\n' + faces.join('\n') + '\n';
+        saveBlob(new Blob([txt], { type: 'text/plain' }), base + '.ply');
+      } else {
+        const pos = new Float32Array(nq * 12), idx = new Uint32Array(nq * 6);
+        const prims = []; let vq = 0;
+        for (const [id, qs] of groups) {
+          const mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9], v0 = vq * 4, i0 = vq * 6;
+          for (const q of qs) {
+            const P = corners(q), b = vq * 4 - v0;
+            for (let k = 0; k < 4; k++) { const o = (vq * 4 + k) * 3; pos[o] = P[k][0]; pos[o + 1] = P[k][1]; pos[o + 2] = P[k][2]; for (let a = 0; a < 3; a++) { if (P[k][a] < mn[a]) mn[a] = P[k][a]; if (P[k][a] > mx[a]) mx[a] = P[k][a]; } }
+            const io = vq * 6; idx[io] = b; idx[io + 1] = b + 1; idx[io + 2] = b + 2; idx[io + 3] = b; idx[io + 4] = b + 2; idx[io + 5] = b + 3; vq++;
+          }
+          prims.push({ id, v0, vc: qs.length * 4, i0, ic: qs.length * 6, mn, mx });
+        }
+        const accessors = [], materials = [], primitives = [];
+        prims.forEach((p, i) => {
+          const c = blockColor(S3.names[p.id], p.id);
+          materials.push({ name: matName(p.id), pbrMetallicRoughness: { baseColorFactor: [lin(c[0]), lin(c[1]), lin(c[2]), 1], metallicFactor: 0, roughnessFactor: 1 } });
+          accessors.push({ bufferView: 0, byteOffset: p.v0 * 12, componentType: 5126, count: p.vc, type: 'VEC3', min: p.mn, max: p.mx }, { bufferView: 1, byteOffset: p.i0 * 4, componentType: 5125, count: p.ic, type: 'SCALAR' });
+          primitives.push({ attributes: { POSITION: i * 2 }, indices: i * 2 + 1, material: i, mode: 4 });
+        });
+        const posBytes = pos.byteLength, binLen = posBytes + idx.byteLength;
+        const json = { asset: { version: '2.0', generator: 'SaveDoctor' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ name: base, mesh: 0 }], meshes: [{ name: base, primitives }], materials, accessors,
+          bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: posBytes, target: 34962 }, { buffer: 0, byteOffset: posBytes, byteLength: idx.byteLength, target: 34963 }], buffers: [{ byteLength: binLen }] };
+        let js = new TextEncoder().encode(JSON.stringify(json)); const jpad = (4 - js.length % 4) % 4; if (jpad) { const t = new Uint8Array(js.length + jpad).fill(32); t.set(js); js = t; }
+        const total = 12 + 8 + js.length + 8 + binLen, out = new DataView(new ArrayBuffer(total)); let o = 0;
+        out.setUint32(o, 0x46546C67, true); out.setUint32(o + 4, 2, true); out.setUint32(o + 8, total, true); o += 12;
+        out.setUint32(o, js.length, true); out.setUint32(o + 4, 0x4E4F534A, true); new Uint8Array(out.buffer, o + 8, js.length).set(js); o += 8 + js.length;
+        out.setUint32(o, binLen, true); out.setUint32(o + 4, 0x004E4942, true); new Uint8Array(out.buffer, o + 8, posBytes).set(new Uint8Array(pos.buffer)); new Uint8Array(out.buffer, o + 8 + posBytes, idx.byteLength).set(new Uint8Array(idx.buffer));
+        saveBlob(new Blob([out.buffer], { type: 'model/gltf-binary' }), base + '.glb');
+      }
+      status.textContent = `exported ${nq.toLocaleString()} quads, ${groups.size} materials`;
+      toast(`Exported ${nq.toLocaleString()} faces in ${groups.size} materials (${base}).`);
     }
 
     try { await load(); } catch (e) { toast('3D load failed: ' + e.message, 'err'); close(); }
