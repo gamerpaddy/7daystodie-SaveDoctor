@@ -147,7 +147,7 @@ public static class Server
             return Results.Content(html, "text/html; charset=utf-8");
         });
 
-        foreach (var script in new[] { "viewer3d.js", "worldtools.js", "schematics.js", "trim.js", "history.js", "players.js" })
+        foreach (var script in new[] { "viewer3d.js", "worldtools.js", "schematics.js", "trim.js", "history.js", "players.js", "kits.js" })
             app.MapGet("/" + script, (HttpContext c) =>
             {
                 c.Response.Headers.CacheControl = "no-store";

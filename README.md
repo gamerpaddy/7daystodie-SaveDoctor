@@ -26,6 +26,7 @@ SaveDoctor reads every file **with the same rules the game uses** (the formats w
 
 **Edit**
 - **Players** – name, position, vitals, kill/death counters, **inventory / backpack / equipment as an icon grid** (drag to swap, uses the icons of your game install), skills & level, quests, challenges, waypoints, spawn points, unlocked recipes. "Advanced" view shows every decoded field.
+- **Kit export** – in the inventory (and the container editor): export toolbelt / backpack / equipment as a kit file for mods – a lossless JSON (items with quality, installed mods, wear, magazine ammo / fuel, extra data) plus ready-made `loot.xml` group and `ItemsOnEnterGame` spawn-loadout snippets.
 - **World header** (`main.ttw`) – world time, seed, game mode, next entity id, …
 - **Vehicles & drones** – position, health, owner, lock/password, storage contents, drone orders.
 - **Electrical grid** (`power.dat`) – every generator, solar panel, battery, switch, timer, trap, with fuel, charge and wiring tree; duplicate-position repair.

@@ -146,6 +146,7 @@ canvas.rg{image-rendering:pixelated;border:1px solid var(--line);border-radius:6
 <script src="/trim.js"></script>
 <script src="/history.js"></script>
 <script src="/players.js"></script>
+<script src="/kits.js"></script>
 <script>
 'use strict';
 const TOKEN = '__TOKEN__';
@@ -902,7 +903,8 @@ function pInventory(el, P, M) {
   }
   el.append(h('div', { class: 'row' },
     h('button', { class: view === 'grid' ? 'primary' : '', onclick: () => { S.invView = 'grid'; renderMain(); } }, 'Grid'),
-    h('button', { class: view === 'list' ? 'primary' : '', onclick: () => { S.invView = 'list'; renderMain(); } }, 'List'), iconRow));
+    h('button', { class: view === 'list' ? 'primary' : '', onclick: () => { S.invView = 'list'; renderMain(); } }, 'List'),
+    h('button', { title: 'Export the inventory as a kit file for mods / spawn loadouts (items with quality, mods, ammo, wear)', onclick: () => KIT.open({ title: (P.ecd.entityName || 'player'), names: M.names, groups: { toolbelt: { label: 'Toolbelt', items: P.inventory.grid.items }, backpack: { label: 'Backpack', items: P.bag.grid.items }, equipment: { label: 'Equipment', items: P.equipment.grid.items, labels: EQUIP_NAMES } } }) }, '⬇ Export kit…'), iconRow));
   if (view === 'list') {
     el.append(h('div', { class: 'card muted' }, 'Wear = how worn out the item is (0 = like new). Quality is the tier (1–6).'));
     el.append(h('h2', {}, 'Toolbelt (' + P.inventory.grid.items.length + ' slots) – selected slot ' + (P.inventory.selectedSlot + 1)), slotTable(M, P.inventory.grid.items));
