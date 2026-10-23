@@ -13,6 +13,7 @@ It is a small local program: you start `SaveDoctor.exe`, it opens a web page in 
 Dedicated servers (and the game itself) sometimes leave half-written files behind when the process is killed, the console window is closed or the power fails: region files with cut-off chunks, player files with a missing tail, zero-filled headers, truncated `multiblocks.7dt`, … The game then logs an error and silently falls back to a backup, loses land claims, or refuses to start.
 
 SaveDoctor reads every file **with the same rules the game uses** (the formats were taken from the game's own `Assembly-CSharp.dll`), tells you exactly what is wrong and where, and offers safe repairs.
+<img width="1019" height="606" alt="firefox_oF8BPyWKBy" src="https://github.com/user-attachments/assets/9dfd42e8-9d60-4006-9749-677e972b30dc" />
 
 ## Features
 
@@ -32,6 +33,7 @@ SaveDoctor reads every file **with the same rules the game uses** (the formats w
 - **Block / item id tables** (`*.nim`), `players.xml`, any XML/JSON text file, and a **hex editor** for everything else.
 - **Region view** – a top-down picture of the real terrain with icons for players, vehicles, drones, waypoints, spawns, land claims, power blocks, containers, zombies and animals; dim chunks a player has not explored; per-chunk export / import / remove; block statistics and "replace block X by Y" (e.g. clean up blocks of a removed mod).
 - **3D chunk viewer** – orbit around a chunk (or 3×3 … 7×7 chunks), clipping planes on all three axes with closed cut faces, hide natural terrain to see only what players built, hover for block names and coordinates.
+<img width="1758" height="1243" alt="firefox_j8pr3K4OkC" src="https://github.com/user-attachments/assets/c58f21d9-f553-447f-ab81-78c4b9f862df" />
 
 **Safety**
 - Every write first copies the previous file to `%APPDATA%\7DaysToDie\SaveDoctorBackups\…` (and a "Snapshot backup" button zips the whole save). Everything can be restored from the *Backups* dialog.
@@ -52,6 +54,7 @@ Unzip anywhere, double-click `Start-SaveDoctor.bat` (or `SaveDoctor.exe`). Your 
 ```
 %APPDATA%\7DaysToDie\Saves\<WorldName>\<GameName>
 ```
+<img width="1228" height="1209" alt="firefox_ALQBwneOek" src="https://github.com/user-attachments/assets/2fa201af-6208-438c-aeb0-ddf5f503305c" />
 
 Dedicated servers use the folder configured by `UserDataFolder` / `SaveGameFolder`.
 
@@ -64,6 +67,7 @@ Windows only (the tool itself is plain .NET and the UI is a web page, so it may 
 - A damaged **region file** → *Check & repair* → *Recover damaged chunks from .bak* (keeps your builds) or *Rebuild* (drops the damaged chunks, the game regenerates natural terrain there).
 - Item icons are read from `Data\ItemIcons` of your game / dedicated server install. They are found automatically in the usual Steam locations, otherwise paste the folder in the box above the inventory.
 - Server stopped with the console window? Next time use `saveworld` and `shutdown` in the server console.
+<img width="1228" height="1209" alt="firefox_l7EjHrn28d" src="https://github.com/user-attachments/assets/117b6a0d-b287-4674-a58a-6bb7355c7fbf" />
 
 ## How it works
 
