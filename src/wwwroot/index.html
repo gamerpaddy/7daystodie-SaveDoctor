@@ -1,0 +1,1187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SaveDoctor – 7 Days to Die save editor</title>
+<style>
+:root{
+  --bg:#12151a; --panel:#1a1f27; --panel2:#212833; --line:#2c3542; --text:#e6eaf0; --muted:#8d99aa;
+  --accent:#4da3ff; --accent2:#2f7fd6; --ok:#3fb950; --warn:#e3a008; --err:#f0524f; --info:#58a6ff;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#f3f5f8; --panel:#fff; --panel2:#eef1f5; --line:#d5dbe3; --text:#1b2330; --muted:#5d6b7e;
+    --accent:#1566c0; --accent2:#0f4f99; --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; --info:#0969da;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.45 system-ui,"Segoe UI",sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 12px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}
+button.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
+button.danger{border-color:var(--err);color:var(--err)}
+button.danger:hover:not(:disabled){background:var(--err);color:#fff}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.small{padding:2px 8px;font-size:12px}
+input[type=text],input[type=number],select,textarea{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:4px 8px;min-width:0}
+input[type=number]{width:110px}
+input:focus,select:focus,textarea:focus{outline:1px solid var(--accent);border-color:var(--accent)}
+a{color:var(--accent)}
+code,.mono{font-family:var(--mono)}
+#app{display:flex;flex-direction:column;height:100%}
+#top{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+#top .brand{font-weight:700;font-size:16px;letter-spacing:.2px}
+#top .brand span{color:var(--accent)}
+#top .path{color:var(--muted);font-family:var(--mono);font-size:12px;max-width:34vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#top .grow{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;border:1px solid var(--line);font-size:12px}
+.pill.ok{color:var(--ok);border-color:var(--ok)} .pill.err{color:var(--err);border-color:var(--err)} .pill.warn{color:var(--warn);border-color:var(--warn)}
+#banner{display:none;background:#5a1f1f;color:#ffd7d6;padding:7px 14px;font-size:13px}
+#banner.show{display:block}
+#body{flex:1;display:flex;min-height:0}
+#side{width:310px;min-width:240px;overflow:auto;background:var(--panel);border-right:1px solid var(--line);padding:8px 0}
+#main{flex:1;overflow:auto;padding:16px 20px;min-width:0}
+.grp{margin:2px 0}
+.grp>.gh{display:flex;align-items:center;gap:6px;padding:5px 12px;cursor:pointer;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;user-select:none}
+.grp>.gh .cnt{margin-left:auto;font-variant-numeric:tabular-nums}
+.item{display:flex;align-items:center;gap:8px;padding:4px 12px 4px 18px;cursor:pointer;border-left:3px solid transparent}
+.item:hover{background:var(--panel2)}
+.item.sel{background:var(--panel2);border-left-color:var(--accent)}
+.item .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .sz{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--line);flex:none;display:inline-block}
+.dot.ok{background:var(--ok)} .dot.info{background:var(--info)} .dot.warn{background:var(--warn)} .dot.error{background:var(--err)} .dot.run{background:var(--muted);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.3}}
+h1{font-size:20px;margin:0 0 4px} h2{font-size:15px;margin:18px 0 8px} h3{font-size:13px;margin:12px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.sub{color:var(--muted);margin-bottom:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:12px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:14px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px}
+.stat b{display:block;font-size:24px;font-variant-numeric:tabular-nums} .stat span{color:var(--muted);font-size:12px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:10px 0 14px;flex-wrap:wrap}
+.tab{padding:7px 14px;cursor:pointer;border:1px solid transparent;border-bottom:none;border-radius:6px 6px 0 0;color:var(--muted)}
+.tab.sel{background:var(--panel);border-color:var(--line);color:var(--text);margin-bottom:-1px;border-bottom:1px solid var(--panel)}
+.issue{display:flex;gap:10px;padding:8px 10px;border:1px solid var(--line);border-left-width:4px;border-radius:6px;margin-bottom:6px;background:var(--panel)}
+.issue.Error{border-left-color:var(--err)} .issue.Warn{border-left-color:var(--warn)} .issue.Info{border-left-color:var(--info)} .issue.Ok{border-left-color:var(--ok)}
+.issue .m{flex:1}
+.sevtag{font-size:11px;font-weight:700;text-transform:uppercase;min-width:42px}
+.sevtag.Error{color:var(--err)} .sevtag.Warn{color:var(--warn)} .sevtag.Info{color:var(--info)}
+.repair{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:var(--panel)}
+.repair .d{flex:1} .repair .d small{display:block;color:var(--muted)}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{color:var(--muted);font-weight:600;font-size:12px;position:sticky;top:0;background:var(--bg)}
+td input[type=text]{width:100%} td input[type=number]{width:100px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.field{display:flex;flex-direction:column;gap:2px;margin:0 12px 8px 0} .field label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:4px 14px}
+.muted{color:var(--muted)} .ok{color:var(--ok)} .err{color:var(--err)} .warn{color:var(--warn)}
+.savebar{position:sticky;bottom:-16px;margin:16px -20px -16px;padding:10px 20px;background:var(--panel);border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;z-index:5}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+#modal.show{display:flex}
+#modal .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:760px;width:100%;max-height:88vh;overflow:auto;padding:18px 20px}
+#modal .box h2{margin-top:0}
+#toasts{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:60;max-width:460px}
+.toast{background:var(--panel2);border:1px solid var(--line);border-left:4px solid var(--info);border-radius:6px;padding:9px 12px;box-shadow:0 4px 18px rgba(0,0,0,.35);white-space:pre-wrap}
+.toast.ok{border-left-color:var(--ok)} .toast.err{border-left-color:var(--err)}
+.hex{font-family:var(--mono);font-size:12.5px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px;overflow:auto}
+.hex .r{display:flex;gap:14px;white-space:pre;line-height:1.55}
+.hex .off{color:var(--muted);width:76px;flex:none}
+.hex .bytes{display:flex;gap:0}
+.hex .b{padding:0 3px;cursor:pointer;border-radius:3px;display:inline-block;width:23px;text-align:center}
+.hex .b:hover{background:var(--panel2)} .hex .b.mod{background:#7a4b00;color:#fff} .hex .b.hl{background:var(--accent2);color:#fff}
+.hex .b.gap{margin-left:8px}
+.hex .asc{color:var(--muted);letter-spacing:.5px}
+.hex input{width:25px;font-family:var(--mono);font-size:12.5px;padding:0 2px;text-align:center}
+canvas.rg{image-rendering:pixelated;border:1px solid var(--line);border-radius:6px;cursor:crosshair;max-width:100%}
+.legend span{display:inline-flex;align-items:center;gap:5px;margin-right:12px;font-size:12px;color:var(--muted)} .legend i{width:12px;height:12px;border-radius:2px;display:inline-block}
+.tree{font-family:var(--mono);font-size:12.5px}
+.tree .k{color:var(--muted)} .tree details{margin-left:14px} .tree summary{cursor:pointer}
+.tree .leaf{margin-left:30px;display:flex;gap:6px;align-items:center;padding:1px 0}
+.tree input[type=text],.tree input[type=number]{padding:0 4px;width:200px}
+.sug{position:absolute;left:0;top:100%;background:var(--panel);border:1px solid var(--line);border-radius:6px;max-height:260px;overflow:auto;z-index:20;min-width:280px;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+.sug div{padding:4px 10px;cursor:pointer;display:flex;justify-content:space-between;gap:12px} .sug div:hover{background:var(--panel2)} .sug small{color:var(--muted)}
+.igrid{display:grid;gap:4px;margin-bottom:8px}
+.cell{position:relative;width:64px;height:64px;background:var(--panel);border:2px solid var(--line);border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none}
+.cell:hover{background:var(--panel2)} .cell.sel{outline:2px solid var(--accent);outline-offset:1px} .cell.active{box-shadow:0 0 0 2px var(--warn) inset}
+.cell .cnt{position:absolute;right:3px;bottom:1px;font-size:12px;font-weight:700;text-shadow:0 0 3px #000,0 0 3px #000;color:#fff}
+.cell .lbl{font-size:10px;color:var(--muted);text-align:center}
+.ico{display:inline-flex;align-items:center;justify-content:center;flex:none}
+.ico img{object-fit:contain;pointer-events:none}
+.ico .ini{font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase}
+.imgprev{max-width:100%;border:1px solid var(--line);border-radius:6px;background:#000;image-rendering:pixelated}
+@media(max-width:820px){#side{width:100%;max-height:34vh} #body{flex-direction:column}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <div class="brand">Save<span>Doctor</span></div>
+    <div class="path" id="rootpath" title=""></div>
+    <button id="btnOpen">Open save…</button>
+    <button id="btnScan">Scan all</button>
+    <button id="btnSnap" title="Zip the whole save folder into the backup area">Snapshot backup</button>
+    <button id="btnBackups">Backups</button>
+    <button id="btnLog">Log</button>
+    <div class="grow"></div>
+    <span class="pill" id="srvpill">…</span>
+    <label class="muted" style="font-size:12px;display:flex;gap:5px;align-items:center" title="Only if you really know the game is not writing to this save"><input type="checkbox" id="chkForce"> allow writes while game runs</label>
+  </div>
+  <div id="banner"></div>
+  <div id="body">
+    <nav id="side"></nav>
+    <main id="main"></main>
+  </div>
+</div>
+<div id="modal"><div class="box" id="modalbox"></div></div>
+<div id="toasts"></div>
+
+<script src="/viewer3d.js"></script>
+<script>
+'use strict';
+const TOKEN = '__TOKEN__';
+const $ = (s, el = document) => el.querySelector(s);
+
+/* ───────────────────────── helpers ───────────────────────── */
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === false || v == null) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'style') e.style.cssText = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k === 'value') e.value = v;
+    else if (k === 'checked' || k === 'disabled' || k === 'selected') e[k] = !!v;
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat(Infinity)) { if (kid == null || kid === false) continue; e.append(kid.nodeType ? kid : document.createTextNode(String(kid))); }
+  return e;
+}
+async function api(path, opt = {}) {
+  const hasBody = opt.body !== undefined || opt.raw !== undefined;
+  const r = await fetch(path, {
+    method: opt.method || (hasBody ? 'POST' : 'GET'),
+    headers: { 'X-SD-Token': TOKEN, ...(opt.body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+    body: opt.raw !== undefined ? opt.raw : (opt.body !== undefined ? JSON.stringify(opt.body) : undefined),
+  });
+  let data = null;
+  if ((r.headers.get('content-type') || '').includes('json')) data = await r.json();
+  if (!r.ok) throw Object.assign(new Error((data && data.error) || r.statusText), { status: r.status, data });
+  return data;
+}
+const qs = o => Object.entries(o).map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&');
+const url = (path, o = {}) => path + '?' + qs({ ...o, t: TOKEN });
+function fmtSize(n) { if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'; return (n / 1048576).toFixed(2) + ' MB'; }
+function toast(msg, kind = 'ok', ms = 5000) {
+  const t = h('div', { class: 'toast ' + kind }, msg);
+  $('#toasts').append(t); setTimeout(() => t.remove(), kind === 'err' ? Math.max(ms, 9000) : ms);
+}
+function modal(content, onclose) {
+  const m = $('#modal'), box = $('#modalbox'); box.replaceChildren(content); m.classList.add('show');
+  const close = () => { m.classList.remove('show'); onclose && onclose(); };
+  m.onclick = e => { if (e.target === m) close(); };
+  return close;
+}
+function closeModal() { $('#modal').classList.remove('show'); }
+function confirmBox(title, body, okLabel = 'OK', danger = false) {
+  return new Promise(res => {
+    const done = v => { closeModal(); res(v); };
+    const c = h('div', {}, h('h2', {}, title), h('div', { class: 'sub', style: 'white-space:pre-wrap' }, body),
+      h('div', { class: 'row', style: 'justify-content:flex-end;margin-top:14px' },
+        h('button', { onclick: () => done(false) }, 'Cancel'),
+        h('button', { class: danger ? 'danger' : 'primary', onclick: () => done(true) }, okLabel)));
+    modal(c, () => res(false));
+  });
+}
+const sevOrder = { Ok: 0, Info: 1, Warn: 2, Error: 3 };
+const dotClass = w => w === 'Error' ? 'error' : w === 'Warn' ? 'warn' : w === 'Info' ? 'info' : 'ok';
+async function guarded(fn) {
+  try { return await fn(); }
+  catch (e) { toast(e.message || String(e), 'err'); console.error(e); }
+}
+function numInput(obj, key, opts = {}) {
+  const i = h('input', { type: 'number', value: obj[key], step: opts.step ?? 'any', min: opts.min, max: opts.max, onchange: () => { const v = i.value === '' ? 0 : Number(i.value); obj[key] = v; markDirty(); opts.on && opts.on(v); } });
+  return i;
+}
+function textInput(obj, key, opts = {}) {
+  return h('input', { type: 'text', value: obj[key] ?? '', style: opts.style, onchange: e => { obj[key] = e.target.value; markDirty(); } });
+}
+function checkInput(obj, key) {
+  return h('input', { type: 'checkbox', checked: !!obj[key], onchange: e => { obj[key] = e.target.checked; markDirty(); } });
+}
+function field(label, ...inputs) { return h('div', { class: 'field' }, h('label', {}, label), ...inputs); }
+
+/* ───────────────────────── state ───────────────────────── */
+const S = {
+  state: null, files: [], scan: {}, scanRunning: false, sel: null, analysis: null, tab: 'issues',
+  model: null, dirty: false, hexJump: null, psub: 'general',
+  openGroups: { World: true, Players: true, Regions: true, 'Game state': true, 'Explored maps': false, 'Backup copies': false, 'Web map tiles': false, 'Config dumps': false },
+};
+function markDirty() { S.dirty = true; const b = $('#savebtn'); if (b) b.disabled = false; const t = $('#dirtytxt'); if (t) t.textContent = 'Unsaved changes'; }
+
+/* ───────────────────────── boot ───────────────────────── */
+async function refreshState() {
+  S.state = await api('/api/state');
+  const st = S.state;
+  $('#rootpath').textContent = st.root || 'no save open'; $('#rootpath').title = st.root || '';
+  const p = $('#srvpill');
+  p.className = 'pill ' + (st.serverRunning ? 'err' : 'ok');
+  p.textContent = st.serverRunning ? '● game/server running' : '● game stopped';
+  $('#chkForce').checked = st.allowWhileRunning;
+  const b = $('#banner');
+  if (st.serverRunning && !st.allowWhileRunning) { b.textContent = 'The game/server is running (' + st.serverProcess + '). Reading is fine, but all write operations are blocked until you stop it – editing live files corrupts saves.'; b.classList.add('show'); }
+  else if (st.serverRunning) { b.textContent = '⚠ Writes are enabled while the game is running. Only do this if you are certain nothing is saving to this folder.'; b.classList.add('show'); }
+  else b.classList.remove('show');
+}
+async function openSave(path) {
+  await api('/api/open', { body: { path } });
+  S.sel = null; S.analysis = null; S.scan = {};
+  await refreshState(); await loadFiles(); startScan(); renderMain();
+}
+async function loadFiles() {
+  const r = await api('/api/files'); S.files = r.files; renderSide(true);
+}
+let pollTimer = null;
+async function startScan() {
+  if (!S.state || !S.state.open) return;
+  clearTimeout(pollTimer);
+  await api('/api/scan/start', { method: 'POST', body: {} });
+  S.scanRunning = true; renderSide(true);
+  const poll = async () => {
+    const r = await api('/api/scan/status');
+    S.scan = {}; for (const x of r.results) S.scan[x.rel] = x;
+    S.scanTotal = r.total; S.scanDone = r.done; S.scanRunning = r.running;
+    renderSide(true);
+    if (S.sel === null && !S.dirty) renderMain();
+    if (r.running) pollTimer = setTimeout(poll, 600);
+  };
+  poll();
+}
+
+/* ───────────────────────── sidebar ───────────────────────── */
+function groupOf(f) {
+  const r = f.rel;
+  if (f.backupOf) return 'Backup copies';
+  if (r.startsWith('ConfigsDump/')) return 'Config dumps';
+  if (r.startsWith('map/')) return 'Web map tiles';
+  if (/\.7rm$/i.test(r)) return 'Explored maps';
+  if (/^Region\//i.test(r)) return 'Regions';
+  if (/^Player\//i.test(r)) return 'Players';
+  if (/\.dat$/i.test(r)) return 'Game state';
+  return 'World';
+}
+function renderSide(keepScroll) {
+  const side = $('#side'); const st = side.scrollTop; side.replaceChildren();
+  if (!S.state || !S.state.open) { side.append(h('div', { class: 'sub', style: 'padding:12px' }, 'No save open.')); return; }
+  side.append(h('div', { class: 'item' + (S.sel === null ? ' sel' : ''), onclick: () => { S.sel = null; S.analysis = null; S.dirty = false; renderSide(true); renderMain(); } },
+    h('span', { class: 'dot ' + (S.scanRunning ? 'run' : overallDot()) }), h('span', { class: 'nm' }, 'Overview'),
+    h('span', { class: 'sz' }, S.scanRunning ? ((S.scanDone || 0) + '/' + (S.scanTotal || '?')) : '')));
+  const order = ['World', 'Players', 'Regions', 'Game state', 'Explored maps', 'Web map tiles', 'Backup copies', 'Config dumps'];
+  const groups = {}; for (const f of S.files) (groups[groupOf(f)] ||= []).push(f);
+  for (const g of order) {
+    const list = groups[g]; if (!list) continue;
+    const open = S.openGroups[g];
+    const bad = list.filter(f => { const s = S.scan[f.rel]; return s && s.worst === 'Error'; }).length;
+    const wrn = list.filter(f => { const s = S.scan[f.rel]; return s && s.worst === 'Warn'; }).length;
+    side.append(h('div', { class: 'grp' },
+      h('div', { class: 'gh', onclick: () => { S.openGroups[g] = !open; renderSide(true); } }, (open ? '▾ ' : '▸ ') + g,
+        h('span', { class: 'cnt' }, bad ? h('span', { class: 'err' }, bad + ' bad ') : '', wrn ? h('span', { class: 'warn' }, wrn + ' warn ') : '', list.length)),
+      open ? list.map(f => {
+        const s = S.scan[f.rel];
+        const nm = f.label || (g === 'World' || g === 'Game state' ? f.rel : f.rel.replace(/^(Region|Player)\//, ''));
+        return h('div', { class: 'item' + (S.sel === f.rel ? ' sel' : ''), title: f.rel + (s && s.top ? '\n' + s.top : ''), onclick: () => selectFile(f.rel) },
+          h('span', { class: 'dot ' + (s ? dotClass(s.worst) : (S.scanRunning ? 'run' : '')) }), h('span', { class: 'nm' }, nm), h('span', { class: 'sz' }, fmtSize(f.size)));
+      }) : null));
+  }
+  if (keepScroll) side.scrollTop = st;
+}
+function overallDot() {
+  let w = 0; for (const s of Object.values(S.scan)) { if (s.backupOf) continue; w = Math.max(w, sevOrder[s.worst]); }
+  return ['ok', 'info', 'warn', 'error'][w];
+}
+
+/* ───────────────────────── overview ───────────────────────── */
+function renderOverview() {
+  const m = $('#main'); m.replaceChildren();
+  if (!S.state || !S.state.open) { renderOpenPicker(m); return; }
+  const all = Object.values(S.scan).filter(s => !s.backupOf);
+  const bad = all.filter(s => s.worst === 'Error'), wrn = all.filter(s => s.worst === 'Warn');
+  m.append(h('h1', {}, S.state.name || 'Save'), h('div', { class: 'sub mono' }, S.state.root));
+  m.append(h('div', { class: 'cards' },
+    h('div', { class: 'stat' }, h('b', {}, S.files.filter(f => !f.rel.startsWith('ConfigsDump/')).length), h('span', {}, 'save files')),
+    h('div', { class: 'stat' }, h('b', { class: bad.length ? 'err' : 'ok' }, S.scanRunning ? '…' : bad.length), h('span', {}, 'damaged')),
+    h('div', { class: 'stat' }, h('b', { class: wrn.length ? 'warn' : '' }, S.scanRunning ? '…' : wrn.length), h('span', {}, 'with warnings')),
+    h('div', { class: 'stat' }, h('b', {}, S.scanRunning ? ((S.scanDone || 0) + '/' + (S.scanTotal || '?')) : 'done'), h('span', {}, 'scan progress'))));
+  if (!S.scanRunning && !bad.length && !wrn.length) {
+    m.append(h('div', { class: 'card' }, h('b', { class: 'ok' }, '✓ Everything checked out.'), h('div', { class: 'muted' }, 'Every file was parsed with the same rules the game uses for loading; nothing looks damaged. Use the sidebar to inspect or edit any file.')));
+  }
+  if (bad.length || wrn.length) {
+    m.append(h('h2', {}, 'Problems found'));
+    const fixable = bad.filter(s => s.repairs > 0);
+    if (fixable.length) m.append(h('div', { class: 'row' }, h('button', { class: 'primary', onclick: fixAllSafe }, 'Auto-fix everything that has a safe fix (' + fixable.length + ')'),
+      h('span', { class: 'muted' }, 'Restores from the game\'s own .bak files when they are healthy, otherwise rebuilds. Each file is backed up first.')));
+    const t = h('table', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'File'), h('th', {}, 'Problem'), h('th', {}, '')));
+    for (const s of [...bad, ...wrn].sort((a, b) => sevOrder[b.worst] - sevOrder[a.worst] || a.rel.localeCompare(b.rel)))
+      t.append(h('tr', {}, h('td', {}, h('span', { class: 'dot ' + dotClass(s.worst) })), h('td', { class: 'mono' }, (S.files.find(x => x.rel === s.rel) || {}).label || s.rel, (S.files.find(x => x.rel === s.rel) || {}).label ? h('div', { class: 'muted', style: 'font-size:11px' }, s.rel) : null), h('td', {}, s.top || s.summary), h('td', {}, h('button', { class: 'small', onclick: () => selectFile(s.rel) }, 'Open'))));
+    m.append(t);
+  }
+  m.append(h('h2', {}, 'How corruption usually happens'),
+    h('div', { class: 'card muted' }, 'Closing the console window, killing the server or a power cut while it is saving leaves half-written files: region files with cut-off chunks, player files with missing tails, zero-filled headers. The game keeps one .bak per file – this tool finds which ones are broken, shows what is wrong, and lets you restore, rebuild or hand-edit them. Stop the server with the "saveworld" and "shutdown" console commands to avoid it.'));
+}
+async function fixAllSafe() {
+  const todo = Object.values(S.scan).filter(s => s.worst === 'Error' && s.repairs > 0 && !s.backupOf);
+  const ok = await confirmBox('Auto-fix ' + todo.length + ' file(s)?', 'For each damaged file the first safe option is applied: restore from a healthy .bak / .ext.bak, otherwise rebuild or truncate to the intact part. The current (damaged) version of every file is copied to the backup area first.\n\n' + todo.map(s => '• ' + s.rel).join('\n'), 'Fix them', false);
+  if (!ok) return;
+  const out = [];
+  for (const s of todo) {
+    try {
+      const a = await api('/api/analyze?' + qs({ rel: s.rel }));
+      const r = a.repairs.find(x => x.id.startsWith('restore')) || a.repairs.find(x => ['rebuild', 'truncate', 'salvage', 'fixStats'].includes(x.id));
+      if (!r) { out.push(s.rel + ': no automatic fix'); continue; }
+      const res = await api('/api/repair', { body: { rel: s.rel, action: r.id } });
+      out.push(s.rel + ': ' + res.message);
+    } catch (e) { out.push(s.rel + ': FAILED – ' + e.message); }
+  }
+  toast(out.join('\n'), 'ok', 15000);
+  await loadFiles(); startScan(); await refreshState();
+}
+function renderOpenPicker(m) {
+  m.append(h('h1', {}, 'Open a save'));
+  const saves = (S.state && S.state.saves) || [];
+  m.append(h('div', { class: 'sub' }, 'Pick one of the saves found in %APPDATA%\\7DaysToDie\\Saves or paste a folder path (the folder that contains main.ttw).'));
+  const inp = h('input', { type: 'text', style: 'width:min(640px,100%)', placeholder: 'C:\\Users\\you\\AppData\\Roaming\\7DaysToDie\\Saves\\Navezgane\\MyGame' });
+  m.append(h('div', { class: 'row' }, inp, h('button', { class: 'primary', onclick: () => guarded(() => openSave(inp.value)) }, 'Open')));
+  const t = h('table', {}, h('tr', {}, h('th', {}, 'World'), h('th', {}, 'Game'), h('th', {}, 'Last saved'), h('th', {}, '')));
+  for (const s of saves) t.append(h('tr', {}, h('td', {}, s.world), h('td', {}, s.game), h('td', {}, s.modified), h('td', {}, h('button', { class: 'small', onclick: () => guarded(() => openSave(s.path)) }, 'Open'))));
+  m.append(t);
+}
+
+/* ───────────────────────── file view ───────────────────────── */
+async function selectFile(rel) {
+  if (S.dirty && !(await confirmBox('Discard unsaved changes?', 'You have unsaved edits in ' + S.sel + '.', 'Discard', true))) return;
+  S.sel = rel; S.dirty = false; S.model = null; S.hexJump = null;
+  renderSide(true);
+  await guarded(async () => {
+    S.analysis = await api('/api/analyze?' + qs({ rel }));
+    const a = S.analysis;
+    S.tab = (a.editable && !a.info.backupOf && a.worst !== 'Error') || a.kind === 'region' && a.worst !== 'Error' ? 'editor' : 'issues';
+    renderMain();
+  });
+}
+async function reanalyze(a) {
+  S.analysis = a || await api('/api/analyze?' + qs({ rel: S.sel }));
+  const x = S.scan[S.sel]; if (x) { x.worst = S.analysis.worst; x.top = (S.analysis.issues.find(i => i.sev === 'Error' || i.sev === 'Warn') || {}).message; x.summary = S.analysis.summary; }
+  renderSide(true);
+}
+function renderMain() {
+  const m = $('#main');
+  if (S.sel === null || !S.analysis) { renderOverview(); return; }
+  const a = S.analysis;
+  m.replaceChildren();
+  const f = S.files.find(x => x.rel === S.sel);
+  m.append(h('div', { class: 'row', style: 'margin-bottom:0' },
+    h('span', { class: 'dot ' + dotClass(a.worst), style: 'width:14px;height:14px' }),
+    h('h1', { style: 'margin:0' }, a.title || a.kind),
+    f && f.label ? h('b', { style: 'font-size:16px' }, f.label) : null, h('span', { class: 'muted mono' }, a.rel), h('span', { class: 'muted' }, fmtSize(a.size) + (f ? ' · ' + f.mtime : ''))));
+  m.append(h('div', { class: 'sub' }, a.summary || ''));
+  const nIss = a.issues.filter(i => i.sev !== 'Ok').length;
+  const tabs = [['issues', 'Check & repair' + (nIss ? ' (' + nIss + ')' : '')]];
+  if ((a.editable && !a.info.backupOf) || a.kind === 'region') tabs.push(['editor', a.kind === 'region' ? 'Region view' : 'Editor']);
+  if (a.info.preview || a.kind === 'png') tabs.push(['preview', 'Preview']);
+  tabs.push(['hex', 'Hex'], ['file', 'File']);
+  if (!tabs.some(t => t[0] === S.tab)) S.tab = 'issues';
+  m.append(h('div', { class: 'tabs' }, tabs.map(([id, label]) => h('div', { class: 'tab' + (S.tab === id ? ' sel' : ''), onclick: async () => { if (S.dirty && !(await confirmBox('Discard unsaved changes?', 'Switching tabs keeps edits only after saving.', 'Discard', true))) return; S.dirty = false; S.model = null; S.tab = id; renderMain(); } }, label))));
+  const body = h('div', { id: 'tabbody' }); m.append(body);
+  ({ issues: tabIssues, editor: tabEditor, hex: tabHex, file: tabFile, preview: tabPreview }[S.tab])(body, a);
+}
+
+/* ── issues & repairs ── */
+function tabIssues(el, a) {
+  if (!a.issues.length) el.append(h('div', { class: 'card' }, h('b', { class: 'ok' }, '✓ No problems found.'), h('div', { class: 'muted' }, 'This file parses exactly like the game would read it.')));
+  for (const i of a.issues) el.append(h('div', { class: 'issue ' + i.sev }, h('span', { class: 'sevtag ' + i.sev }, i.sev), h('div', { class: 'm' }, i.message, i.offset != null ? h('div', { class: 'muted mono' }, 'at offset 0x' + Number(i.offset).toString(16).toUpperCase() + ' · ', h('a', { href: '#', onclick: e => { e.preventDefault(); S.hexJump = Number(i.offset); S.tab = 'hex'; renderMain(); } }, 'show in hex')) : null)));
+  if (a.repairs.length) {
+    el.append(h('h2', {}, 'Repair options'));
+    for (const r of a.repairs) {
+      if (r.id === 'fromBackup') { el.append(recoverChunksCard(a, r)); continue; }
+      el.append(h('div', { class: 'repair' }, h('div', { class: 'd' }, h('b', {}, r.label), h('small', {}, r.description)),
+        h('button', { class: r.destructive ? 'danger' : 'primary', onclick: () => doRepair(a.rel, r) }, 'Apply')));
+    }
+  }
+  if (a.info && a.info.unknownNames) el.append(h('h3', {}, 'Names not defined by current configs'), h('div', { class: 'mono muted' }, a.info.unknownNames.join(', ')));
+  if (a.info && a.info.topBlocks) { el.append(h('h3', {}, 'Most common decoration blocks')); el.append(h('table', {}, a.info.topBlocks.map(b => h('tr', {}, h('td', {}, b.name), h('td', {}, b.count.toLocaleString()))))); }
+}
+async function doRepair(rel, r) {
+  const ok = await confirmBox(r.label, r.description + '\n\nThe current file is copied to the backup area first, so this can be undone from the "Backups" dialog.', 'Apply', r.destructive);
+  if (!ok) return;
+  await guarded(async () => {
+    const res = await api('/api/repair', { body: { rel, action: r.id } });
+    toast(res.message, 'ok', 9000);
+    await afterWrite(rel, res.analysis);
+  });
+}
+async function afterWrite(rel, analysis) {
+  await loadFiles();
+  if (S.sel === rel) {
+    await reanalyze(analysis); S.model = null; S.dirty = false; renderMain();
+  } else if (S.sel === null) renderMain();
+  startScan();
+}
+
+/* ── hex ── */
+const HEXPAGE = 512;
+function tabHex(el, a) {
+  const st = { off: 0, size: a.size, data: null, pend: new Map(), hl: S.hexJump };
+  if (S.hexJump != null) st.off = Math.floor(S.hexJump / HEXPAGE) * HEXPAGE;
+  S.hexJump = null;
+  const view = h('div', { class: 'hex' });
+  const info = h('span', { class: 'muted' });
+  const goto = h('input', { type: 'text', placeholder: 'offset (0x… or decimal)', style: 'width:170px' });
+  const find = h('input', { type: 'text', placeholder: 'find: hex "50 4B 03" or text', style: 'width:210px' });
+  const applyBtn = h('button', { class: 'primary', disabled: true, onclick: apply }, 'Apply changes');
+  const discBtn = h('button', { disabled: true, onclick: () => { st.pend.clear(); draw(); } }, 'Discard');
+  const load = async () => {
+    const r = await api('/api/hex?' + qs({ rel: a.rel, offset: st.off, length: HEXPAGE }));
+    st.size = r.size; st.data = Uint8Array.from(atob(r.data), c => c.charCodeAt(0)); draw();
+  };
+  function draw() {
+    view.replaceChildren();
+    if (!st.data) return;
+    for (let r = 0; r < st.data.length; r += 16) {
+      const bytes = h('span', { class: 'bytes' }); let asc = '';
+      for (let i = 0; i < 16; i++) {
+        if (r + i >= st.data.length) { bytes.append(h('span', { class: 'b' + (i === 8 ? ' gap' : '') }, '  ')); continue; }
+        const o = st.off + r + i; const v = st.pend.has(o) ? st.pend.get(o) : st.data[r + i];
+        const cell = h('span', { class: 'b' + (i === 8 ? ' gap' : '') + (st.pend.has(o) ? ' mod' : '') + (st.hl === o ? ' hl' : ''), onclick: () => edit(cell, o, v) }, v.toString(16).padStart(2, '0'));
+        bytes.append(cell); asc += (v >= 32 && v < 127) ? String.fromCharCode(v) : '·';
+      }
+      view.append(h('div', { class: 'r' }, h('span', { class: 'off' }, (st.off + r).toString(16).toUpperCase().padStart(8, '0')), bytes, h('span', { class: 'asc' }, asc)));
+    }
+    info.textContent = `bytes ${st.off.toLocaleString()}–${Math.min(st.off + HEXPAGE, st.size).toLocaleString()} of ${st.size.toLocaleString()}` + (st.pend.size ? ` · ${st.pend.size} pending edit(s)` : '');
+    applyBtn.disabled = discBtn.disabled = st.pend.size === 0;
+  }
+  function edit(cell, o, v) {
+    const inp = h('input', { type: 'text', value: v.toString(16).padStart(2, '0'), maxlength: 2 });
+    const commit = () => { const n = parseInt(inp.value, 16); if (!isNaN(n) && n >= 0 && n < 256 && n !== st.data[o - st.off]) st.pend.set(o, n); else if (n === st.data[o - st.off]) st.pend.delete(o); draw(); };
+    inp.onblur = commit; inp.onkeydown = e => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') { inp.value = v.toString(16); inp.blur(); } };
+    cell.replaceChildren(inp); inp.focus(); inp.select();
+  }
+  async function apply() {
+    const sorted = [...st.pend.entries()].sort((x, y) => x[0] - y[0]); const edits = []; let cur = null;
+    for (const [o, v] of sorted) { if (cur && cur.end === o) { cur.hex += v.toString(16).padStart(2, '0'); cur.end++; } else { cur = { offset: o, hex: v.toString(16).padStart(2, '0'), end: o + 1 }; edits.push(cur); } }
+    if (!(await confirmBox('Write ' + st.pend.size + ' byte(s)?', 'Raw byte edits can easily break a file. The current file is backed up first.', 'Write', true))) return;
+    await guarded(async () => { const r = await api('/api/hexwrite', { body: { rel: a.rel, edits: edits.map(e => ({ offset: e.offset, hex: e.hex })) } }); toast('Written. Backup: ' + (r.backup || '–')); st.pend.clear(); S.hexJump = st.off; await afterWrite(a.rel, r.analysis); S.tab = 'hex'; renderMain(); });
+  }
+  const jump = o => { st.off = Math.max(0, Math.floor(o / HEXPAGE) * HEXPAGE); st.hl = o; guarded(load); };
+  el.append(h('div', { class: 'row' },
+    h('button', { onclick: () => { st.off = Math.max(0, st.off - HEXPAGE); guarded(load); } }, '◀ prev'),
+    h('button', { onclick: () => { if (st.off + HEXPAGE < st.size) { st.off += HEXPAGE; guarded(load); } } }, 'next ▶'),
+    goto, h('button', { onclick: () => { const v = goto.value.trim(); const n = v.startsWith('0x') ? parseInt(v, 16) : parseInt(v, 10); if (!isNaN(n)) jump(n); } }, 'Go'),
+    find, h('button', { onclick: () => guarded(async () => { const v = find.value.trim(); const isHex = /^([0-9a-f]{2}\s*)+$/i.test(v); const r = await api('/api/hexfind?' + qs({ rel: a.rel, pattern: v, mode: isHex ? 'hex' : 'text', from: (st.hl ?? st.off) + 1 })); if (r.found) jump(r.offset); else toast('Not found'); }) }, 'Find next'),
+    info));
+  el.append(view, h('div', { class: 'row', style: 'margin-top:10px' }, applyBtn, discBtn, h('span', { class: 'muted' }, 'Click a byte to change it. Edits are only written when you press "Apply changes".')));
+  guarded(load);
+}
+
+/* ── file tab ── */
+function tabFile(el, a) {
+  el.append(h('div', { class: 'card' },
+    h('div', { class: 'row' },
+      h('a', { href: url('/api/download', { rel: a.rel }), download: a.rel.split('/').pop() }, h('button', {}, '⬇ Download this file')),
+      h('button', { onclick: () => { const i = h('input', { type: 'file', onchange: async () => { const f = i.files[0]; if (!f) return; if (!(await confirmBox('Replace ' + a.rel + '?', 'Replace the file with "' + f.name + '" (' + fmtSize(f.size) + ')? The current file is backed up first.', 'Replace', true))) return; guarded(async () => { const r = await api('/api/upload?' + qs({ rel: a.rel }), { raw: f }); toast('Replaced.'); await afterWrite(a.rel, r.analysis); }); } }); i.click(); } }, '⬆ Replace with a file…'),
+      h('button', { onclick: () => guarded(() => api('/api/reveal', { body: { path: S.state.root + '\\' + a.rel.replace(/\//g, '\\') } })) }, 'Show in Explorer'),
+      h('button', { class: 'danger', onclick: async () => { if (await confirmBox('Delete ' + a.rel + '?', 'The file is moved to the backup area (not permanently deleted).', 'Delete', true)) guarded(async () => { await api('/api/delete', { body: { rel: a.rel } }); S.sel = null; S.analysis = null; toast('Deleted (backup kept).'); await loadFiles(); renderMain(); startScan(); }); } }, 'Delete file'))));
+  const base = a.info.backupOf || a.rel;
+  const sibs = S.files.filter(f => f.rel !== a.rel && (f.backupOf === base || f.rel === base));
+  if (sibs.length) {
+    el.append(h('h2', {}, 'Main file and its backup copies'));
+    el.append(h('table', {}, sibs.map(f => { const s = S.scan[f.rel]; return h('tr', {}, h('td', {}, h('span', { class: 'dot ' + (s ? dotClass(s.worst) : '') })), h('td', { class: 'mono' }, f.rel), h('td', {}, fmtSize(f.size)), h('td', {}, f.mtime), h('td', {}, s ? s.summary : ''), h('td', {}, h('button', { class: 'small', onclick: () => selectFile(f.rel) }, 'Open'))); })));
+  }
+}
+
+/* ── preview (map region / png) ── */
+function tabPreview(el, a) {
+  const src = a.kind === 'map' ? url('/api/map/preview', { rel: a.rel }) : url('/api/image', { rel: a.rel });
+  el.append(h('img', { class: 'imgprev', src, style: a.kind === 'map' ? 'width:min(100%,768px)' : '', alt: 'preview' }));
+}
+
+/* ───────────────────────── editors ───────────────────────── */
+async function tabEditor(el, a) {
+  const kind = a.kind;
+  if (kind === 'region') return regionEditor(el, a);
+  if (kind === 'deco') return decoEditor(el, a);
+  if (kind === 'xml' || kind === 'json') return textEditor(el, a);
+  if (!S.model || S.model._rel !== a.rel) {
+    try { const r = await api('/api/model?' + qs({ rel: a.rel })); S.model = r.model; S.model._rel = a.rel; }
+    catch (e) { el.append(h('div', { class: 'card err' }, 'This file cannot be opened in the structured editor: ' + e.message)); return; }
+  }
+  const body = h('div', {});
+  el.append(body);
+  const ed = { player: playerEditor, world: worldEditor, nim: nimEditor, dat: datEditor, multiblock: multiEditor }[kind];
+  if (!ed) { body.append(h('div', { class: 'muted' }, 'No structured editor for this kind – use Hex.')); return; }
+  ed(body, S.model, a);
+  el.append(h('div', { class: 'savebar' }, h('button', { id: 'savebtn', class: 'primary', disabled: !S.dirty, onclick: () => saveModel(a) }, 'Save changes'),
+    h('span', { id: 'dirtytxt', class: 'muted' }, S.dirty ? 'Unsaved changes' : 'No changes'),
+    h('span', { class: 'muted' }, '· the previous version is backed up automatically')));
+}
+async function saveModel(a) {
+  await guarded(async () => {
+    const m = { ...S.model }; delete m._rel;
+    const r = await api('/api/model?' + qs({ rel: a.rel }), { body: m });
+    toast('Saved ' + fmtSize(r.size) + '. Backup: ' + (r.backup || '–'));
+    S.dirty = false; S.model = null; await afterWrite(a.rel, r.analysis);
+  });
+}
+async function textEditor(el, a) {
+  const r = await api('/api/model?' + qs({ rel: a.rel })); const m = r.model;
+  const ta = h('textarea', { style: 'width:100%;height:60vh;font-family:var(--mono);font-size:12.5px;white-space:pre', spellcheck: false, oninput: markDirty }); ta.value = m.text;
+  const force = h('input', { type: 'checkbox' });
+  el.append(ta, h('div', { class: 'savebar' }, h('button', { id: 'savebtn', class: 'primary', disabled: true, onclick: () => guarded(async () => {
+    const res = await api('/api/model?' + qs({ rel: a.rel }), { body: { text: ta.value, bom: m.bom, force: force.checked } });
+    toast('Saved. Backup: ' + (res.backup || '–')); S.dirty = false; await afterWrite(a.rel, res.analysis);
+  }) }, 'Save'), h('span', { id: 'dirtytxt', class: 'muted' }, 'No changes'), h('label', { class: 'muted' }, force, ' save even if not well-formed')));
+}
+function nimEditor(el, m) {
+  const q = h('input', { type: 'text', placeholder: 'filter…', style: 'width:240px' });
+  const tbl = h('div', {});
+  const draw = () => {
+    const f = q.value.toLowerCase(); tbl.replaceChildren();
+    const t = h('table', {}, h('tr', {}, h('th', {}, 'Id'), h('th', {}, 'Name'), h('th', {}, '')));
+    m.entries.forEach((e, i) => { if (f && !e.name.toLowerCase().includes(f) && !String(e.id).includes(f)) return; t.append(h('tr', {}, h('td', {}, numInput(e, 'id', { step: 1 })), h('td', {}, textInput(e, 'name')), h('td', {}, h('button', { class: 'small danger', onclick: () => { m.entries.splice(i, 1); markDirty(); draw(); } }, '✕')))); });
+    tbl.append(t);
+  };
+  q.oninput = draw;
+  el.append(h('div', { class: 'card muted' }, 'Maps numeric ids stored in chunks / player files to block or item names. Changing an id or a name changes what existing saved data refers to – only touch it to repair duplicates or empty names.'),
+    h('div', { class: 'row' }, q, h('span', { class: 'muted' }, m.entries.length + ' entries'), h('button', { onclick: () => { m.entries.push({ id: Math.max(0, ...m.entries.map(e => e.id)) + 1, name: 'newName' }); markDirty(); draw(); } }, '+ Add entry')), tbl);
+  draw();
+}
+function worldEditor(el, M) {
+  const w = M.world;
+  const lbl = h('span', { style: 'padding:4px 0' });
+  const setLbl = v => { lbl.textContent = 'Day ' + (Math.floor(v / 24000) + 1) + ', ' + String(Math.floor(v % 24000 / 1000)).padStart(2, '0') + ':00'; };
+  setLbl(Number(w.worldTime));
+  const b = x => atob(x).length;
+  el.append(h('div', { class: 'card' },
+    h('h3', {}, 'Time'),
+    h('div', { class: 'row' }, field('World time (ticks)', numInput(w, 'worldTime', { step: 1, on: setLbl })), field('Shows as', lbl), field('Tick counter', numInput(w, 'timeInTicks', { step: 1 }))),
+    h('div', { class: 'muted' }, '24000 ticks = 1 in-game day (1000 ticks per hour).'),
+    h('h3', {}, 'World'),
+    h('div', { class: 'grid2' },
+      field('Game version text', textInput(w, 'gameVersionString')), field('Seed', numInput(w, 'seed', { step: 1 })), field('Water level', numInput(w, 'waterLevel')),
+      field('Active game mode', numInput(w, 'activeGameMode', { step: 1 })), field('Chunk provider id', numInput(w, 'providerId', { step: 1 })), field('Next entity id', numInput(w, 'nextEntityId', { step: 1 })),
+      field('Save data limit', numInput(w, 'saveDataLimit', { step: 1 })), field('GUID', textInput(w, 'guid'))),
+    h('h3', {}, 'Version info'),
+    h('div', { class: 'grid2' }, field('Release type', numInput(w, 'releaseType', { step: 1 })), field('Major', numInput(w, 'major', { step: 1 })), field('Minor', numInput(w, 'minor', { step: 1 })), field('Build', numInput(w, 'build', { step: 1 }))),
+    h('h3', {}, 'Stored sub-states (kept unchanged)'),
+    h('div', { class: 'muted' }, `dynamic spawner ${b(w.dynamicSpawner)} bytes · AI director ${b(w.aiDirector)} bytes · sleeper volumes ${b(w.sleeperVolumes)} bytes · trigger volumes ${b(w.triggerVolumes)} bytes · wall volumes ${b(w.wallVolumes)} bytes · weather ${b(w.weather)} bytes`)));
+}
+function datEditor(el, M) {
+  if (M.power) return powerEditor(el, M);
+  if (M.entities) return entitiesEditor(el, M);
+  if (M.powered) {
+    for (const [title, list] of [['Powered blocks', M.powered], ['Storage blocks', M.storage]]) {
+      el.append(h('h2', {}, title + ' (' + list.length + ')'));
+      if (list.length) { const t = h('table', {}, h('tr', {}, h('th', {}, 'X'), h('th', {}, 'Y'), h('th', {}, 'Z'), h('th', {}, ''))); list.forEach((v, i) => t.append(h('tr', {}, [0, 1, 2].map(k => h('td', {}, numInput(v, k, { step: 1 }))), h('td', {}, h('button', { class: 'small danger', onclick: () => { list.splice(i, 1); markDirty(); renderMain(); } }, '✕'))))); el.append(t); }
+      el.append(h('div', { class: 'row', style: 'margin-top:6px' }, h('button', { onclick: () => { list.push([0, 0, 0]); markDirty(); renderMain(); } }, '+ Add')));
+    }
+  } else if (M.ids) {
+    el.append(h('h2', {}, 'Turret entity ids (' + M.ids.length + ')'));
+    M.ids.forEach((v, i) => el.append(h('div', { class: 'row' }, numInput(M.ids, i, { step: 1 }), h('button', { class: 'small danger', onclick: () => { M.ids.splice(i, 1); markDirty(); renderMain(); } }, '✕'))));
+    el.append(h('button', { onclick: () => { M.ids.push(0); markDirty(); renderMain(); } }, '+ Add'));
+  }
+}
+
+
+
+/* ───────────────────────── BlockValue helpers (shared by decoration / multiblock editors) ───────────────────────── */
+function bvRaw(r) { let v = (r.block & 0xFFFF) | ((r.rot & 31) << 16) | ((r.m3 & 1) << 21) | ((r.m1 & 15) << 22) | ((r.m2 & 15) << 26) | ((r.child ? 1 : 0) << 30); if (r.decal) v |= 0x80000000; return v >>> 0; }
+function bvDecode(raw) { return { block: raw & 0xFFFF, rot: (raw >>> 16) & 31, m3: (raw >>> 21) & 1, m1: (raw >>> 22) & 15, m2: (raw >>> 26) & 15, child: ((raw >>> 30) & 1) === 1, decal: (raw >>> 31) === 1 }; }
+const hex8 = n => (n >>> 0).toString(16).toUpperCase().padStart(8, '0');
+async function blockList() { if (!S.blockList) { S.blockList = await api('/api/blocks'); S.blockByName = new Map(S.blockList.map(b => [b.name, b.id])); S.blockById = new Map(S.blockList.map(b => [b.id, b.name])); } return S.blockList; }
+function blockDatalist() { return h('datalist', { id: 'blocklist' }, (S.blockList || []).map(b => h('option', { value: b.name }))); }
+
+/* ───────────────────────── decoration.7dt ───────────────────────── */
+const DSTATE = ['Generated (active)', 'Generated (inactive)', 'Dynamic'];
+async function decoEditor(el, a) {
+  await blockList();
+  const sum = await api('/api/deco/summary?' + qs({ rel: a.rel }));
+  const st = { off: 0, limit: 100, block: '', state: -1, pending: new Map(), dels: new Set(), matched: 0 };
+  const dirtyTxt = h('span', { class: 'muted' });
+  const saveBtn = h('button', { id: 'savebtn', class: 'primary', disabled: true, onclick: save }, 'Save changes');
+  const upd = () => { const n = st.pending.size + st.dels.size; saveBtn.disabled = n === 0; S.dirty = n > 0; dirtyTxt.textContent = n ? `${st.pending.size} edited, ${st.dels.size} marked for deletion (not saved yet)` : 'No changes'; };
+  async function save() {
+    await guarded(async () => {
+      const r = await api('/api/deco/apply', { body: { rel: a.rel, updates: [...st.pending.values()], deletes: [...st.dels] } });
+      toast(r.message); S.dirty = false; await afterWrite(a.rel, r.analysis); S.tab = 'editor'; renderMain();
+    });
+  }
+  async function bulk(body, label) {
+    if (st.pending.size || st.dels.size) { toast('Save or discard your pending edits first.', 'err'); return; }
+    if (!(await confirmBox(label, 'This rewrites decoration.7dt (a backup of the current file is stored first).', 'Do it', true))) return;
+    guarded(async () => { const r = await api('/api/deco/apply', { body: { rel: a.rel, ...body } }); toast(r.message); await afterWrite(a.rel, r.analysis); S.tab = 'editor'; renderMain(); });
+  }
+  el.append(h('div', { class: 'card' },
+    h('b', {}, sum.total.toLocaleString() + ' decorations'),
+    h('div', { class: 'muted', style: 'margin-top:4px' }, 'The number is the amount of records. Every record is one trees / rock / plant that the world generator placed (or that was later chopped or added dynamically). Each stores: a position (x, y, z), the exact height (realYPos), a block value – block type id plus rotation, three meta values, "child" and "decal" bits – and a state (generated-active = standing, generated-inactive = harvested/removed, dynamic = added at runtime). Everything is editable below; player-built blocks are not stored here.')));
+  // by block
+  const tbody = h('table', {}, h('tr', {}, h('th', {}, 'Block'), h('th', {}, 'Total'), h('th', {}, 'Active'), h('th', {}, 'Inactive'), h('th', {}, 'Dynamic'), h('th', {}, '')));
+  const showAll = { v: false };
+  const drawSum = () => {
+    [...tbody.querySelectorAll('tr:not(:first-child)')].forEach(x => x.remove());
+    (showAll.v ? sum.blocks : sum.blocks.slice(0, 15)).forEach(b => tbody.append(h('tr', {}, h('td', {}, b.name), h('td', {}, b.count.toLocaleString()), h('td', {}, b.active.toLocaleString()), h('td', {}, b.inactive.toLocaleString()), h('td', {}, b.dynamic.toLocaleString()),
+      h('td', {}, h('button', { class: 'small', onclick: () => { st.block = String(b.id); blockIn.value = b.name; st.off = 0; loadPage(); } }, 'Show'), ' ',
+        h('button', { class: 'small danger', onclick: () => bulk({ bulk: 'deleteBlock', block: b.id }, 'Delete all ' + b.count.toLocaleString() + ' "' + b.name + '" decorations?') }, 'Delete all'), ' ',
+        h('button', { class: 'small', onclick: () => { const to = prompt('Replace every "' + b.name + '" with which block (exact name)?'); if (!to) return; const id = S.blockByName.get(to.trim()); if (id == null) { toast('Unknown block name', 'err'); return; } bulk({ bulk: 'replaceBlock', block: b.id, to: id }, 'Replace all "' + b.name + '" with "' + to + '"?'); } }, 'Replace…'), ' ',
+        h('button', { class: 'small', onclick: () => { const v = prompt('New state for all "' + b.name + '": 0 = generated active, 1 = generated inactive, 2 = dynamic'); if (v == null || !/^[012]$/.test(v.trim())) return; bulk({ bulk: 'setState', block: b.id, state: Number(v) }, 'Set the state of all "' + b.name + '" decorations?'); } }, 'Set state…')))));
+    if (sum.blocks.length > 15) tbody.append(h('tr', {}, h('td', { colspan: 6 }, h('a', { href: '#', onclick: e => { e.preventDefault(); showAll.v = !showAll.v; drawSum(); } }, showAll.v ? 'show fewer' : `show all ${sum.blocks.length} block types`))));
+  };
+  el.append(h('h2', {}, 'By block type'), tbody); drawSum();
+
+  // browser
+  const blockIn = h('input', { type: 'text', list: 'blocklist', placeholder: 'block name or id…', style: 'width:220px', onchange: () => { st.block = blockIn.value.trim(); if (S.blockByName.has(st.block)) st.block = String(S.blockByName.get(st.block)); st.off = 0; loadPage(); } });
+  const stateSel = h('select', { onchange: () => { st.state = Number(stateSel.value); st.off = 0; loadPage(); } }, h('option', { value: -1 }, 'any state'), DSTATE.map((n, i) => h('option', { value: i }, n)));
+  const limSel = h('select', { onchange: () => { st.limit = Number(limSel.value); st.off = 0; loadPage(); } }, [50, 100, 250, 500].map(n => h('option', { value: n, selected: n === 100 }, n + ' rows')));
+  const info = h('span', { class: 'muted' });
+  const tableHost = h('div');
+  el.append(h('h2', {}, 'Records'), blockDatalist(), h('div', { class: 'row' }, blockIn, stateSel, limSel,
+    h('button', { onclick: () => { st.off = Math.max(0, st.off - st.limit); loadPage(); } }, '◀'), h('button', { onclick: () => { if (st.off + st.limit < st.matched) { st.off += st.limit; loadPage(); } } }, '▶'), info), tableHost);
+  async function loadPage() {
+    const r = await api('/api/deco/page?' + qs({ rel: a.rel, offset: st.off, limit: st.limit, block: st.block, state: st.state }));
+    st.matched = r.matched; info.textContent = `${r.matched.toLocaleString()} match · showing ${r.rows.length ? (r.offset + 1).toLocaleString() + '–' + (r.offset + r.rows.length).toLocaleString() : '0'}`;
+    const t = h('table', {}, h('tr', {}, ['#', 'Block', 'X', 'Y', 'Z', 'Real Y', 'Rot', 'Meta1', 'Meta2', 'Meta3', 'Child', 'Decal', 'State', 'Raw', ''].map(x => h('th', {}, x))));
+    for (const r0 of r.rows) {
+      const row = st.pending.get(r0.i) || { ...r0 };
+      const mark = () => { row.raw = bvRaw(row); st.pending.set(row.i, row); rawCell.textContent = hex8(row.raw); upd(); };
+      const rawCell = h('td', { class: 'mono muted' }, hex8(row.raw));
+      const num = (k, o = {}) => h('td', {}, h('input', { type: 'number', value: row[k], step: o.step ?? 1, min: o.min, max: o.max, style: 'width:' + (o.w || 70) + 'px', onchange: e => { row[k] = Number(e.target.value); mark(); } }));
+      const chk = k => h('td', {}, h('input', { type: 'checkbox', checked: !!row[k], onchange: e => { row[k] = e.target.checked; mark(); } }));
+      const tr = h('tr', { style: st.dels.has(row.i) ? 'opacity:.4;text-decoration:line-through' : (st.pending.has(row.i) ? 'background:rgba(227,160,8,.12)' : '') },
+        h('td', { class: 'muted' }, row.i), h('td', {}, h('input', { type: 'text', list: 'blocklist', value: row.name, style: 'width:210px', onchange: e => { const id = S.blockByName.get(e.target.value.trim()); if (id == null) { toast('Unknown block name', 'err'); e.target.value = row.name; return; } row.block = id; row.name = e.target.value.trim(); mark(); } })),
+        num('x', { w: 76 }), num('y', { w: 64 }), num('z', { w: 76 }), num('realY', { step: 'any', w: 90 }), num('rot', { min: 0, max: 31, w: 56 }), num('m1', { min: 0, max: 15, w: 56 }), num('m2', { min: 0, max: 15, w: 56 }), num('m3', { min: 0, max: 1, w: 50 }), chk('child'), chk('decal'),
+        h('td', {}, h('select', { onchange: e => { row.state = Number(e.target.value); mark(); } }, DSTATE.map((n, i) => h('option', { value: i, selected: row.state === i }, n)))), rawCell,
+        h('td', {}, h('button', { class: 'small danger', onclick: () => { if (st.dels.has(row.i)) st.dels.delete(row.i); else st.dels.add(row.i); upd(); loadPage(); } }, st.dels.has(row.i) ? 'undo' : '✕')));
+      t.append(tr);
+    }
+    tableHost.replaceChildren(h('div', { style: 'overflow-x:auto' }, t));
+  }
+  el.append(h('div', { class: 'savebar' }, saveBtn, h('button', { onclick: () => { st.pending.clear(); st.dels.clear(); upd(); loadPage(); } }, 'Discard'), dirtyTxt, h('span', { class: 'muted' }, '· backup is created automatically')));
+  upd(); loadPage();
+}
+
+/* ───────────────────────── multiblocks.7dt ───────────────────────── */
+async function multiEditor(el, M) {
+  await blockList();
+  const FL = [[1, 'POI multi-block'], [2, 'Cross-chunk'], [4, 'Oversized'], [8, 'Terrain-aligned']];
+  el.append(h('div', { class: 'card muted' }, 'The multi-block tracker remembers blocks that are bigger than one cell or span several chunks (POI parts, oversized blocks, terrain-aligned blocks). Each record: position, block value (type + rotation + meta bits) and which kinds of tracking apply. The game rebuilds this file when chunks load, so editing is rarely needed – deleting stale records is the common fix.'), blockDatalist());
+  const t = h('table', {}, h('tr', {}, ['#', 'Block', 'X', 'Y', 'Z', 'Rot', 'Meta1', 'Meta2', 'Meta3', 'Child', 'Decal', ...FL.map(f => f[1]), 'Raw', ''].map(x => h('th', {}, x))));
+  M.records.forEach((r, i) => {
+    const d = bvDecode(r.raw); const rawCell = h('td', { class: 'mono muted' }, hex8(r.raw));
+    const sync = () => { r.raw = bvRaw(d); rawCell.textContent = hex8(r.raw); markDirty(); };
+    const num = (o, k, opt = {}) => h('td', {}, h('input', { type: 'number', value: o[k], step: 1, min: opt.min, max: opt.max, style: 'width:' + (opt.w || 70) + 'px', onchange: e => { o[k] = Number(e.target.value); if (o === d) sync(); else markDirty(); } }));
+    t.append(h('tr', {}, h('td', { class: 'muted' }, i),
+      h('td', {}, h('input', { type: 'text', list: 'blocklist', value: (S.blockById.get(d.block)) || (M.names && M.names[d.block]) || 'block#' + d.block, style: 'width:210px', onchange: e => { const id = S.blockByName.get(e.target.value.trim()); if (id == null) { toast('Unknown block name', 'err'); return; } d.block = id; sync(); } })),
+      num(r, 'x', { w: 76 }), num(r, 'y', { w: 64 }), num(r, 'z', { w: 76 }), num(d, 'rot', { min: 0, max: 31, w: 56 }), num(d, 'm1', { min: 0, max: 15, w: 56 }), num(d, 'm2', { min: 0, max: 15, w: 56 }), num(d, 'm3', { min: 0, max: 1, w: 50 }),
+      h('td', {}, h('input', { type: 'checkbox', checked: d.child, onchange: e => { d.child = e.target.checked; sync(); } })), h('td', {}, h('input', { type: 'checkbox', checked: d.decal, onchange: e => { d.decal = e.target.checked; sync(); } })),
+      ...FL.map(([bit]) => h('td', {}, h('input', { type: 'checkbox', checked: (r.flags & bit) !== 0, onchange: e => { r.flags = e.target.checked ? (r.flags | bit) : (r.flags & ~bit); markDirty(); } }))), rawCell,
+      h('td', {}, h('button', { class: 'small danger', onclick: () => { M.records.splice(i, 1); markDirty(); renderMain(); } }, '✕'))));
+  });
+  el.append(h('div', { style: 'overflow-x:auto' }, t), h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { onclick: () => { M.records.push({ x: 0, y: 0, z: 0, raw: 0, flags: 1 }); markDirty(); renderMain(); } }, '+ Add record')));
+}
+
+/* ───────────────────────── electrical grid editor (power.dat) ───────────────────────── */
+const PTYPES = ['Generic', 'Consumer', 'Toggle consumer', 'Trigger / switch', 'Timer relay', 'Generator', 'Solar panel', 'Battery bank', 'Ranged trap', 'Wire relay', 'Trip-wire relay', 'Pressure plate'];
+const PICON = ['⚙', '💡', '💡', '🎚', '⏱', '⛽', '☀', '🔋', '🎯', '🔌', '〰', '▭'];
+const TRIG = ['Switch', 'Pressure plate', 'Timer relay', 'Motion sensor', 'Trip wire'];
+function powerEditor(el, M) {
+  const P = M.power; const nm = id => (M.names && M.names[id]) || 'block#' + id;
+  const all = []; (function w(l) { for (const n of l) { all.push(n); w(n.children); } })(P.circuits);
+  const cnt = {}; for (const n of all) cnt[n.type] = (cnt[n.type] || 0) + 1;
+  el.append(h('div', { class: 'cards' }, h('div', { class: 'stat' }, h('b', {}, all.length), h('span', {}, 'power nodes')), h('div', { class: 'stat' }, h('b', {}, P.circuits.length), h('span', {}, 'circuits (roots)')),
+    ...Object.entries(cnt).map(([t, c]) => h('div', { class: 'stat' }, h('b', {}, c), h('span', {}, PTYPES[t] || 'type ' + t)))));
+  if (!all.length) { el.append(h('div', { class: 'card muted' }, 'This save has no wired power blocks yet.')); return; }
+  el.append(h('div', { class: 'row' },
+    h('button', { onclick: () => { all.filter(n => n.type >= 5 && n.type <= 7).forEach(n => n.isOn = true); markDirty(); renderMain(); } }, 'Switch all sources on'),
+    h('button', { onclick: () => { all.filter(n => n.type >= 5 && n.type <= 7).forEach(n => n.isOn = false); markDirty(); renderMain(); } }, 'Switch all sources off'),
+    h('button', { onclick: () => { all.filter(n => n.type === 2).forEach(n => n.toggled = true); markDirty(); renderMain(); } }, 'Turn all toggles on')));
+  const removeNode = (list, i, keepKids) => {
+    const n = list[i];
+    if (keepKids) { n.children.forEach(c => { if (list === P.circuits) c.parentPos = null; }); list.splice(i, 1, ...n.children); }
+    else list.splice(i, 1);
+    markDirty(); renderMain();
+  };
+  const nodeView = (n, list, i, depth) => {
+    const det = h('details', { open: depth < 2, style: 'margin-left:' + (depth ? 14 : 0) + 'px' });
+    det.append(h('summary', {}, PICON[n.type] || '•', ' ', h('b', {}, PTYPES[n.type] || 'type ' + n.type), ' ', nm(n.blockId), ' ', h('span', { class: 'muted mono' }, `@ ${n.pos.join(', ')}`),
+      n.type >= 5 && n.type <= 7 ? h('span', { class: n.isOn ? 'ok' : 'muted' }, n.isOn ? ' ● on' : ' ○ off') : null, n.children.length ? h('span', { class: 'muted' }, ` · ${n.children.length} wired`) : null));
+    const f = h('div', { class: 'row', style: 'margin:6px 0 6px 18px' });
+    f.append(field('X', numInput(n.pos, 0, { step: 1 })), field('Y', numInput(n.pos, 1, { step: 1 })), field('Z', numInput(n.pos, 2, { step: 1 })));
+    if (n.type >= 5 && n.type <= 7) {
+      f.append(field('On', checkInput(n, 'isOn')), field('Stored power', numInput(n, 'currentPower', { step: 1, min: 0, max: 65535 })));
+      if (n.type === 5) f.append(field('Fuel', numInput(n, 'currentFuel', { step: 1, min: 0, max: 65535 })));
+      if (n.type === 6) f.append(field('Sun light', numInput(n, 'sunLight', { step: 1, min: 0, max: 255 })));
+      f.append(field('Item slots', h('span', { class: 'muted', style: 'padding:4px 0' }, (n.slots || []).filter(s => s.count > 0).map(s => ((M.names && M.names[s.item.type]) || '#' + s.item.type) + '×' + s.count).join(', ') || 'empty')));
+    } else if (n.type === 2) f.append(field('Switched on', checkInput(n, 'toggled')));
+    else if ([3, 4, 10, 11].includes(n.type)) {
+      f.append(field('Kind', h('span', { style: 'padding:4px 0' }, TRIG[n.triggerType] || n.triggerType)), field(n.triggerType === 0 ? 'Triggered' : 'Active', checkInput(n, 'flag')));
+      if (n.triggerType !== 0) f.append(field('Delay type', numInput(n, 'delay', { step: 1 })), field('Duration type', numInput(n, 'duration', { step: 1 })));
+      if (n.triggerType === 3) f.append(field('Target flags', numInput(n, 'targetType', { step: 1 })));
+      if (n.type === 4) f.append(field('Start', numInput(n, 'startTime', { step: 1 })), field('End', numInput(n, 'endTime', { step: 1 })));
+    } else if (n.type === 8) f.append(field('Locked', checkInput(n, 'locked')), field('Target flags', numInput(n, 'targetType', { step: 1 })));
+    f.append(h('div', { class: 'field' }, h('label', {}, 'Remove'), h('div', { class: 'row', style: 'margin:0' },
+      h('button', { class: 'small danger', onclick: () => removeNode(list, i, false) }, 'with wired children'),
+      n.children.length ? h('button', { class: 'small', onclick: () => removeNode(list, i, true) }, 'keep children') : null)));
+    det.append(f);
+    n.children.forEach((c, j) => det.append(nodeView(c, n.children, j, depth + 1)));
+    return det;
+  };
+  const tree = h('div', { class: 'tree', style: 'font-family:inherit' });
+  P.circuits.forEach((n, i) => tree.append(nodeView(n, P.circuits, i, 0)));
+  el.append(tree);
+}
+
+/* ───────────────────────── stored vehicles / drones ───────────────────────── */
+function entitiesEditor(el, M) {
+  const isVeh = M.kind === 'vehicles.dat';
+  if (!M.entities.length) { el.append(h('div', { class: 'card muted' }, 'No ' + (isVeh ? 'vehicles' : 'drones') + ' are stored in this file. (Vehicles/drones that are currently loaded in the world are saved inside the world chunks instead.)')); return; }
+  el.append(h('div', { class: 'card muted' }, 'Vehicles and drones that are not currently loaded in the world. Position changes take effect the next time the entity is loaded; deleting removes it permanently.'));
+  M.entities.forEach((it, idx) => {
+    const e = it.ecd, d = it.detail;
+    const card = h('div', { class: 'card' });
+    card.append(h('div', { class: 'row' }, h('h3', { style: 'margin:0' }, it.className), h('span', { class: 'muted mono' }, 'entity #' + e.id),
+      h('div', { style: 'flex:1' }), h('button', { class: 'danger small', onclick: async () => { if (await confirmBox('Delete ' + it.className + ' #' + e.id + '?', 'It is removed from the file when you save.', 'Delete', true)) { M.entities.splice(idx, 1); markDirty(); renderMain(); } } }, 'Delete')));
+    card.append(h('div', { class: 'row' }, field('X', numInput(e, 'posX')), field('Y', numInput(e, 'posY')), field('Z', numInput(e, 'posZ')), field('Rotation Y', numInput(e, 'rotY')), field('On ground', checkInput(e, 'onGround')), field('Entity id', numInput(e, 'id', { step: 1 }))));
+    if (e.stats && e.stats.health) card.append(h('div', { class: 'row' }, field('Health', numInput(e.stats.health, 'value')), field('Max health', numInput(e.stats.health, 'baseMax')),
+      h('button', { class: 'small', onclick: () => { e.stats.health.value = e.stats.health.baseMax; markDirty(); renderMain(); } }, 'Repair fully')));
+    if (d && isVeh) {
+      card.append(h('div', { class: 'row' },
+        field('Owner (user id)', h('input', { type: 'text', value: d.owner ? d.owner.userId : '', style: 'width:300px', onchange: ev => { if (!d.owner) d.owner = { flag: 1, platform: 'EOS', userId: '' }; d.owner.userId = ev.target.value; markDirty(); } })),
+        field('Platform', h('input', { type: 'text', value: d.owner ? d.owner.platform : '', style: 'width:90px', onchange: ev => { if (!d.owner) d.owner = { flag: 1, platform: 'EOS', userId: '' }; d.owner.platform = ev.target.value; markDirty(); } })),
+        field('Locked', checkInput(d, 'locked')), field('Interaction locked', checkInput(d, 'interactionLocked')), field('Headlight', checkInput(d, 'headlight')),
+        field('Password hash', textInput(d, 'passwordHash')),
+        h('div', { class: 'field' }, h('label', {}, 'Unlock'), h('button', { class: 'small', onclick: () => { d.locked = false; d.interactionLocked = false; d.passwordHash = ''; d.allowedUsers = []; markDirty(); renderMain(); } }, 'Clear lock & password'))));
+      if (d.item) card.append(h('div', { class: 'row' }, itemIcon(M, d.item.item.type, 40), h('span', {}, 'Vehicle item: ', h('b', {}, (M.names && M.names[d.item.item.type]) || '#' + d.item.item.type)), field('Item wear', numInput(d.item.item, 'useTimes', { step: 1 })), field('Mods', h('span', { class: 'muted', style: 'padding:4px 0' }, (d.item.item.mods || []).map(m => m ? (M.names && M.names[m.type]) || '#' + m.type : '–').join(', ') || 'none'))));
+      if (d.bag) card.append(h('h3', {}, 'Storage (' + d.bag.items.length + ' slots)'), slotTable(M, d.bag.items));
+      card.append(h('div', { class: 'muted', style: 'font-size:12px' }, 'Allowed users: ' + (d.allowedUsers.length ? d.allowedUsers.map(u => u && u.userId).join(', ') : 'none')));
+    } else if (d && !isVeh) {
+      const ownerBox = (o, set) => h('input', { type: 'text', value: o ? o.userId : '', style: 'width:300px', onchange: ev => { const v = o || set(); v.userId = ev.target.value; markDirty(); } });
+      card.append(h('div', { class: 'row' }, field('Owner (user id)', ownerBox(d.owner, () => (d.owner = { flag: 1, platform: 'EOS', userId: '' }))),
+        d.item && d.item.type ? field('Drone item', h('span', { style: 'padding:4px 0' }, (M.names && M.names[d.item.type]) || '#' + d.item.type)) : null,
+        field('Order state', numInput(e, 'orderState', { step: 1 }))));
+      if (d.parsed) {
+        card.append(h('div', { class: 'row' }, (d.syncFlags & 1) ? field('Drone health', numInput(d, 'health', { step: 1 })) : null,
+          (d.syncFlags & 0x4000) ? field('Order', h('select', { onchange: ev => { d.order = Number(ev.target.value); markDirty(); renderMain(); } }, ['Follow', 'Stay (sentry)'].map((n, i) => h('option', { value: i, selected: d.order === i }, n)))) : null,
+          (d.syncFlags & 0x4000) && d.order === 1 ? [field('Sentry X', numInput(d.sentryPos, 0)), field('Y', numInput(d.sentryPos, 1)), field('Z', numInput(d.sentryPos, 2))] : null,
+          (d.syncFlags & 0x20) ? field('Quiet mode', checkInput(d, 'quietMode')) : null, (d.syncFlags & 0x40) ? field('Flashlight', checkInput(d, 'flashlight')) : null,
+          (d.syncFlags & 0x100) ? field('Heals allies', checkInput(d, 'healAllies')) : null));
+        if (d.syncFlags & 2) card.append(h('div', { class: 'row' }, field('Locked', checkInput(d, 'locked')), field('Password hash', textInput(d, 'passwordHash')),
+          h('div', { class: 'field' }, h('label', {}, 'Unlock'), h('button', { class: 'small', onclick: () => { d.locked = false; d.interactionLocked = false; d.passwordHash = ''; d.allowedUsers = []; markDirty(); renderMain(); } }, 'Clear lock & password'))));
+        if (d.bag) card.append(h('h3', {}, 'Cargo storage (' + d.bag.items.length + ' slots, ' + d.bag.items.filter(x => x.count > 0).length + ' used)'), slotTable(M, d.bag.items));
+        else card.append(h('div', { class: 'muted' }, 'This drone has no cargo storage data.'));
+      } else card.append(h('div', { class: 'muted' }, (it.detailError || 'Sync block not decoded') + ' – preserved unchanged (' + atob(d.tail).length + ' bytes).'));
+    } else if (it.detailError) card.append(h('div', { class: 'muted' }, 'Detail data could not be decoded (' + it.detailError + ') – it is preserved unchanged.'));
+    elExtra(card, e);
+    el.append(card);
+  });
+  function elExtra(card, e) { card.append(h('details', {}, h('summary', { class: 'muted' }, 'All raw fields'), treeView(e))); }
+}
+
+/* ───────────────────────── player editor ───────────────────────── */
+const SUB = { general: 'General', inventory: 'Inventory', skills: 'Skills', journal: 'Quests & challenges', world: 'Waypoints & spawn', adv: 'Advanced (all fields)' };
+function playerEditor(el, M) {
+  const P = M.player;
+  el.append(h('div', { class: 'tabs', style: 'margin-top:0' }, Object.entries(SUB).map(([k, v]) => h('div', { class: 'tab' + (S.psub === k ? ' sel' : ''), onclick: () => { S.psub = k; renderMain(); } }, v))));
+  const body = h('div', {}); el.append(body);
+  ({ general: pGeneral, inventory: pInventory, skills: pSkills, journal: pJournal, world: pWorld, adv: pAdv }[S.psub])(body, P, M);
+}
+function pGeneral(el, P, M) {
+  const E = P.ecd;
+  el.append(h('div', { class: 'card' }, h('h3', {}, 'Identity'),
+    h('div', { class: 'grid2' }, field('Name', textInput(E, 'entityName')), field('Entity id', numInput(P, 'id', { step: 1 })), field('Class', h('span', { style: 'padding:4px 0' }, M.entityClass)), field('Dead', checkInput(P, 'dead')))));
+  el.append(h('div', { class: 'card' }, h('h3', {}, 'Position (applied when the player next logs in)'),
+    h('div', { class: 'row' }, field('X', numInput(E, 'posX')), field('Y (height)', numInput(E, 'posY')), field('Z', numInput(E, 'posZ')), field('Rotation Y', numInput(E, 'rotY')))));
+  if (E.stats) {
+    const st = E.stats; const row = (label, s) => s && h('tr', {}, h('td', {}, label), h('td', {}, numInput(s, 'value')), h('td', {}, numInput(s, 'baseMax')), h('td', {}, numInput(s, 'originalBaseMax')), h('td', {}, numInput(s, 'maxModifier')));
+    el.append(h('div', { class: 'card' }, h('h3', {}, 'Vitals'), h('table', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'Current'), h('th', {}, 'Max'), h('th', {}, 'Original max'), h('th', {}, 'Max modifier')),
+      row('Health', st.health), row('Stamina', st.stamina), row('Water', st.water), row('Food', st.food)),
+      h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { onclick: () => { for (const s of [st.health, st.stamina, st.water, st.food]) if (s) s.value = s.baseMax; markDirty(); renderMain(); } }, 'Fill everything to max'))));
+  }
+  el.append(h('div', { class: 'card' }, h('h3', {}, 'Statistics'),
+    h('div', { class: 'grid2' }, field('Zombie kills', numInput(P, 'zombieKills', { step: 1 })), field('Player kills', numInput(P, 'playerKills', { step: 1 })), field('Deaths', numInput(P, 'deaths', { step: 1 })), field('Score', numInput(P, 'score', { step: 1 })),
+      field('Distance walked', numInput(P, 'distanceWalked')), field('Longest life', numInput(P, 'longestLife')), field('Current life', numInput(P, 'currentLife')), field('Total time played', numInput(P, 'totalTimePlayed')),
+      field('Items crafted', numInput(P, 'totalItemsCrafted', { step: 1 })))));
+}
+function itemPicker(onPick) {
+  const wrap = h('span', { style: 'position:relative;display:inline-block' });
+  const inp = h('input', { type: 'text', value: '', style: 'width:230px', placeholder: 'empty – type to search items…' });
+  let box = null, timer = null;
+  const hide = () => { box && box.remove(); box = null; };
+  inp.oninput = () => { clearTimeout(timer); timer = setTimeout(async () => {
+    if (!inp.value.trim()) { hide(); return; }
+    const r = await api('/api/items?' + qs({ q: inp.value })); hide();
+    box = h('div', { class: 'sug' }, r.map(it => h('div', { onmousedown: e => { e.preventDefault(); hide(); onPick(it); } }, it.name, h('small', {}, (it.isBlock ? 'block ' : it.isMod ? 'mod ' : 'item ') + it.id))));
+    wrap.append(box);
+  }, 150); };
+  inp.onblur = () => setTimeout(hide, 150);
+  wrap.append(inp); return wrap;
+}
+function emptyItem() { return { type: 0, useTimes: 0, quality: 0, meta: -1, metadata: [], stats: null, mods: [], cosmetics: [], flags: 0, ammo: 0, seed: 0, texture: null }; }
+function newItem(it, count) {
+  const q = it.quality ? 1 : 0;
+  const mods = it.isMod ? null : (it.quality && it.modSlots ? new Array(it.modSlots[Math.min(Math.max(q, 1), it.modSlots.length) - 1] || 0).fill(null) : []);
+  return { count: count || 1, item: { type: it.id, useTimes: 0, quality: q, meta: -1, metadata: [], stats: null, mods, cosmetics: it.isMod ? null : [], flags: 0, ammo: 0, seed: 0, texture: null } };
+}
+function slotTable(M, items, opts = {}) {
+  const t = h('table', {}, h('tr', {}, h('th', {}, '#'), h('th', {}, 'Item'), h('th', {}, 'Count'), h('th', {}, 'Quality'), h('th', {}, 'Wear'), h('th', {}, 'Mods'), h('th', {}, '')));
+  const nameOf = it => (M.names && M.names[it.type]) || ('#' + it.type);
+  items.forEach((s, i) => {
+    const empty = !(s.count > 0 && s.item.type);
+    const modsTxt = s.item && s.item.mods ? s.item.mods.map(m => m ? ((M.names && M.names[m.type]) || '#' + m.type) : '–').join(', ') : '';
+    t.append(h('tr', {},
+      h('td', { class: 'muted' }, (opts.labels && opts.labels[i]) || (i + 1)),
+      h('td', {}, empty ? itemPicker(it => { Object.assign(s, newItem(it, 1)); M.names[it.id] = it.name; markDirty(); renderMain(); })
+        : h('span', {}, h('b', {}, nameOf(s.item)), ' ', h('span', { class: 'muted' }, s.item.type >= 65536 ? '' : '(block)'))),
+      h('td', {}, empty ? '' : numInput(s, 'count', { step: 1, min: 0, max: 65535 })),
+      h('td', {}, empty ? '' : numInput(s.item, 'quality', { step: 1, min: 0, max: 600 })),
+      h('td', {}, empty ? '' : numInput(s.item, 'useTimes', { step: 1, min: 0 })),
+      h('td', { class: 'muted' }, modsTxt),
+      h('td', {}, empty ? '' : h('button', { class: 'small danger', title: 'Empty this slot', onclick: () => { s.count = 0; s.item = emptyItem(); markDirty(); renderMain(); } }, '✕'))));
+  });
+  return t;
+}
+const EQUIP_NAMES = ['Head', 'Chest', 'Hands', 'Legs', 'Feet', 'Neck', 'Ring', 'Backpack', 'Outfit', 'Slot 10', 'Slot 11', 'Slot 12', 'Slot 13'];
+const QCOL = ['#808080', '#9C8867', '#CF7F29', '#A2A41B', '#42C234', '#315DCE', '#A42ACC'];
+function itemIcon(M, type, size) {
+  const nm = (M.names && M.names[type]) || '?';
+  const box = h('span', { class: 'ico', style: `width:${size}px;height:${size}px` });
+  const ini = () => h('span', { class: 'ini', title: nm }, /^(item|block)#/.test(nm) ? '?' : nm.replace(/^(gun|melee|food|drink|medical|ammo|res|mod|tool|armor|cnt)/i, '').slice(0, 3) || nm.slice(0, 3));
+  if (S.state && S.state.icons) {
+    const img = h('img', { src: url('/api/icon', { type }), width: size, height: size, loading: 'lazy', alt: '' });
+    img.onerror = () => { img.remove(); box.append(ini()); };
+    box.append(img);
+  } else box.append(ini());
+  return box;
+}
+function swapStacks(a, b) { const x = { count: a.count, item: a.item }; a.count = b.count; a.item = b.item; b.count = x.count; b.item = x.item; }
+function gridView(M, items, cols, key, opts = {}) {
+  const g = h('div', { class: 'igrid', style: `grid-template-columns:repeat(auto-fill,64px);max-width:${cols * 68}px` });
+  items.forEach((s, i) => {
+    const empty = !(s.count > 0 && s.item.type);
+    const sel = S.invSel && S.invSel.key === key && S.invSel.i === i;
+    const q = !empty && s.item.quality > 0 ? QCOL[Math.min(6, s.item.quality)] : null;
+    const cell = h('div', { class: 'cell' + (sel ? ' sel' : '') + (opts.active === i ? ' active' : ''), draggable: 'true', style: q ? `border-color:${q}` : '',
+      title: empty ? (opts.labels && opts.labels[i]) || 'empty' : `${(M.names && M.names[s.item.type]) || s.item.type} ×${s.count}${s.item.quality ? ' · quality ' + s.item.quality : ''}`,
+      onclick: () => { S.invSel = { key, i }; renderMain(); },
+      ondragstart: e => { e.dataTransfer.setData('text/plain', key + ':' + i); },
+      ondragover: e => { e.preventDefault(); },
+      ondrop: e => { e.preventDefault(); const [k2, i2] = e.dataTransfer.getData('text/plain').split(':'); const src = opts.lookup(k2, Number(i2)); if (src && src !== s) { swapStacks(src, s); S.invSel = { key, i }; markDirty(); renderMain(); } } },
+      empty ? h('span', { class: 'lbl' }, (opts.labels && opts.labels[i]) || '') : [itemIcon(M, s.item.type, 48), s.count > 1 ? h('span', { class: 'cnt' }, s.count) : null]);
+    g.append(cell);
+  });
+  return g;
+}
+function pInventory(el, P, M) {
+  const lookup = (k, i) => ({ inv: P.inventory.grid.items, bag: P.bag.grid.items, eq: P.equipment.grid.items }[k] || [])[i];
+  const view = S.invView || 'grid';
+  const iconRow = [];
+  if (!(S.state && S.state.icons)) {
+    const i = h('input', { type: 'text', placeholder: 'F:\\…\\7 Days to Die\\Data\\ItemIcons', style: 'width:320px' });
+    iconRow.push(h('span', { class: 'warn' }, 'Item icons not found – game\'s Data\\ItemIcons folder: '), i, h('button', { onclick: () => guarded(async () => { await api('/api/settings', { body: { iconDir: i.value.trim() } }); await refreshState(); renderMain(); }) }, 'Use'));
+  }
+  el.append(h('div', { class: 'row' },
+    h('button', { class: view === 'grid' ? 'primary' : '', onclick: () => { S.invView = 'grid'; renderMain(); } }, 'Grid'),
+    h('button', { class: view === 'list' ? 'primary' : '', onclick: () => { S.invView = 'list'; renderMain(); } }, 'List'), iconRow));
+  if (view === 'list') {
+    el.append(h('div', { class: 'card muted' }, 'Wear = how worn out the item is (0 = like new). Quality is the tier (1–6).'));
+    el.append(h('h2', {}, 'Toolbelt (' + P.inventory.grid.items.length + ' slots) – selected slot ' + (P.inventory.selectedSlot + 1)), slotTable(M, P.inventory.grid.items));
+    el.append(h('h2', {}, 'Backpack (' + P.bag.grid.items.length + ' slots)'), slotTable(M, P.bag.grid.items));
+    el.append(h('h2', {}, 'Equipment'), slotTable(M, P.equipment.grid.items, { labels: EQUIP_NAMES }));
+    if (P.dragAndDrop.length) el.append(h('h2', {}, 'Item held by the cursor'), slotTable(M, P.dragAndDrop));
+    return;
+  }
+  const O = { lookup };
+  el.append(h('div', { class: 'muted', style: 'margin-bottom:6px' }, 'Click a slot to edit it, drag one slot onto another to swap. Border colour = quality tier.'));
+  const left = h('div', {});
+  left.append(h('h3', {}, 'Toolbelt – selected slot ' + (P.inventory.selectedSlot + 1)), gridView(M, P.inventory.grid.items, Math.min(10, P.inventory.grid.items.length), 'inv', { ...O, active: P.inventory.selectedSlot }));
+  left.append(h('h3', {}, 'Backpack'), gridView(M, P.bag.grid.items, P.bag.grid.width || 8, 'bag', O));
+  left.append(h('h3', {}, 'Equipment'), gridView(M, P.equipment.grid.items, 7, 'eq', { ...O, labels: EQUIP_NAMES }));
+  const side = h('div', { class: 'card', style: 'flex:1;min-width:280px;align-self:flex-start' });
+  const sel = S.invSel && lookup(S.invSel.key, S.invSel.i);
+  if (!sel) side.append(h('div', { class: 'muted' }, 'No slot selected.'));
+  else {
+    const empty = !(sel.count > 0 && sel.item.type);
+    side.append(h('h3', { style: 'margin-top:0' }, { inv: 'Toolbelt', bag: 'Backpack', eq: 'Equipment' }[S.invSel.key] + ' slot ' + (S.invSel.key === 'eq' ? EQUIP_NAMES[S.invSel.i] : S.invSel.i + 1)));
+    if (empty) side.append(h('div', { class: 'muted', style: 'margin-bottom:6px' }, 'Empty – add an item:'), itemPicker(it => { Object.assign(sel, newItem(it, 1)); M.names[it.id] = it.name; markDirty(); renderMain(); }));
+    else {
+      side.append(h('div', { class: 'row' }, itemIcon(M, sel.item.type, 56), h('div', {}, h('b', {}, (M.names && M.names[sel.item.type]) || '#' + sel.item.type), h('div', { class: 'muted mono' }, 'id ' + sel.item.type))),
+        h('div', { class: 'grid2' }, field('Count', numInput(sel, 'count', { step: 1, min: 0, max: 65535 })), field('Quality', numInput(sel.item, 'quality', { step: 1, min: 0, max: 600 })), field('Wear', numInput(sel.item, 'useTimes', { step: 1, min: 0 }))),
+        sel.item.mods ? h('div', { class: 'muted' }, 'Mods: ' + (sel.item.mods.map(m => m ? ((M.names && M.names[m.type]) || '#' + m.type) : '–').join(', ') || 'none')) : null,
+        h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'danger', onclick: () => { sel.count = 0; sel.item = emptyItem(); markDirty(); renderMain(); } }, 'Empty slot')));
+    }
+  }
+  left.style.cssText = 'flex:1 1 300px;min-width:0';
+  side.style.cssText = 'flex:1 1 280px;min-width:0;align-self:flex-start';
+  el.append(h('div', { style: 'display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start' }, left, side));
+  if (P.dragAndDrop.length) el.append(h('h2', {}, 'Item held by the cursor'), slotTable(M, P.dragAndDrop));
+}
+function pSkills(el, P) {
+  const K = P.skills;
+  if (!K) { el.append(h('div', { class: 'card muted' }, 'The progression data could not be decoded; it is preserved unchanged.')); return; }
+  el.append(h('div', { class: 'card' }, h('div', { class: 'grid2' }, field('Player level', numInput(K, 'level', { step: 1, min: 1 })), field('XP to next level', numInput(K, 'expToNextLevel', { step: 1 })), field('Unspent skill points', numInput(K, 'skillPoints', { step: 1, min: 0 })), field('XP deficit', numInput(K, 'expDeficit', { step: 1 })))));
+  const q = h('input', { type: 'text', placeholder: 'filter skills…', style: 'width:220px' }); const tbl = h('div');
+  const draw = () => { const f = q.value.toLowerCase(); tbl.replaceChildren(h('table', {}, h('tr', {}, h('th', {}, 'Skill / perk / book id'), h('th', {}, 'Level'), h('th', {}, 'Cost for next')), K.skills.filter(s => !f || s.name.toLowerCase().includes(f)).map(s => h('tr', {}, h('td', {}, s.name), h('td', {}, numInput(s, 'level', { step: 1, min: 0, max: 255 })), h('td', {}, numInput(s, 'cost', { step: 1})))))); };
+  q.oninput = draw; el.append(h('div', { class: 'row' }, q, h('span', { class: 'muted' }, K.skills.length + ' entries')), tbl); draw();
+}
+function pJournal(el, P) {
+  const stn = ['Not started', 'In progress', 'Ready to hand in', 'Completed', 'Failed'];
+  el.append(h('h2', {}, 'Quests (' + P.quests.quests.length + ')'));
+  if (P.quests.quests.length) { const t = h('table', {}, h('tr', {}, h('th', {}, 'Quest id'), h('th', {}, 'State'), h('th', {}, 'Bytes'), h('th', {}, ''))); P.quests.quests.forEach((q, i) => t.append(h('tr', {}, h('td', { class: 'mono' }, q.id), h('td', {}, stn[q.state] || q.state), h('td', {}, atob(q.rest).length), h('td', {}, h('button', { class: 'small danger', onclick: () => { P.quests.quests.splice(i, 1); markDirty(); renderMain(); } }, 'Remove'))))); el.append(t); }
+  else el.append(h('div', { class: 'muted' }, 'No active quests.'));
+  const C = P.challenges; const names = ['Active', 'Completed', 'Redeemed'];
+  el.append(h('h2', {}, 'Challenges (' + C.challenges.length + ')'));
+  const q = h('input', { type: 'text', placeholder: 'filter…', style: 'width:220px' }); const tbl = h('div');
+  const draw = () => { const f = q.value.toLowerCase(); tbl.replaceChildren(h('table', {}, h('tr', {}, h('th', {}, 'Challenge'), h('th', {}, 'State'), h('th', {}, 'Objectives (progress)')), C.challenges.filter(c => !f || c.name.toLowerCase().includes(f)).map(c => h('tr', {}, h('td', { class: 'mono' }, c.name),
+    h('td', {}, h('select', { onchange: e => { c.state = Number(e.target.value); markDirty(); } }, names.map((n, i) => h('option', { value: i, selected: c.state === i }, n)))),
+    h('td', {}, c.objectives.map(o => numInput(o, 'current', { step: 1 }))))))); };
+  q.oninput = draw; el.append(h('div', { class: 'row' }, q, h('button', { onclick: async () => { if (await confirmBox('Mark all challenges redeemed?', 'This sets every challenge to the "Redeemed" state (rewards are not granted).', 'Do it')) { C.challenges.forEach(c => c.state = 2); markDirty(); renderMain(); } } }, 'Mark all redeemed')), tbl); draw();
+}
+function pWorld(el, P) {
+  el.append(h('h2', {}, 'Waypoints (' + P.waypoints.length + ')'));
+  if (P.waypoints.length) { const t = h('table', {}, h('tr', {}, h('th', {}, 'Name'), h('th', {}, 'Icon'), h('th', {}, 'X'), h('th', {}, 'Y'), h('th', {}, 'Z'), h('th', {}, ''))); P.waypoints.forEach((w, i) => t.append(h('tr', {}, h('td', {}, textInput(w, 'name')), h('td', {}, textInput(w, 'icon')), [0, 1, 2].map(k => h('td', {}, numInput(w.pos, k, { step: 1 }))), h('td', {}, h('button', { class: 'small danger', onclick: () => { P.waypoints.splice(i, 1); markDirty(); renderMain(); } }, '✕'))))); el.append(t); }
+  el.append(h('h2', {}, 'Spawn / respawn'),
+    h('div', { class: 'row' }, field('Last spawn X', numInput(P.lastSpawnPos, 0, { step: 1 })), field('Y', numInput(P.lastSpawnPos, 1, { step: 1 })), field('Z', numInput(P.lastSpawnPos, 2, { step: 1 })), field('Heading', numInput(P, 'lastSpawnHeading'))),
+    h('div', { class: 'row' }, field('Map marker X', numInput(P.markerPosition, 0, { step: 1 })), field('Y', numInput(P.markerPosition, 1, { step: 1 })), field('Z', numInput(P.markerPosition, 2, { step: 1 })), field('Marker hidden', checkInput(P, 'markerHidden'))));
+  el.append(h('h2', {}, 'Unlocked recipes (' + P.unlockedRecipes.length + ') · already crafted (' + P.alreadyCrafted.length + ')'), h('div', { class: 'mono muted', style: 'max-height:140px;overflow:auto' }, P.unlockedRecipes.join(', ') || '–'));
+  el.append(h('h2', {}, 'Owned entities (' + P.owned.length + ')'), P.owned.length ? h('table', {}, P.owned.map((o, i) => h('tr', {}, h('td', {}, 'entity ' + o.id), h('td', {}, 'class ' + o.classId), h('td', {}, h('button', { class: 'small danger', onclick: () => { P.owned.splice(i, 1); markDirty(); renderMain(); } }, 'Forget'))))) : h('div', { class: 'muted' }, 'none'));
+}
+function pAdv(el, P) {
+  el.append(h('div', { class: 'card muted' }, 'Every decoded field of the file. Byte blobs (base64) are shown read-only. Edit with care – values are range-checked only by the game on load.'));
+  el.append(treeView(P));
+}
+const BLOB_KEYS = /^(rest|tail|progression|buffs|stealth|bag|entityData|requestKey|dynamicSpawner|aiDirector|sleeperVolumes|triggerVolumes|wallVolumes|weather)$/;
+function treeView(obj) {
+  const wrap = h('div', { class: 'tree' });
+  const render = (o, container, d) => {
+    for (const [k, v] of Object.entries(o)) {
+      if (v !== null && typeof v === 'object') {
+        const arr = Array.isArray(v); const det = h('details', { open: d < 1 }); det.append(h('summary', {}, h('span', { class: 'k' }, k), arr ? ` [${v.length}]` : ' {…}'));
+        if (arr && v.length > 40 && v.every(x => x === null || typeof x !== 'object')) det.append(h('div', { class: 'leaf muted' }, v.length + ' values'));
+        else render(v, det, d + 1);
+        container.append(det);
+      } else {
+        let inp;
+        if (typeof v === 'boolean') inp = h('input', { type: 'checkbox', checked: v, onchange: e => { o[k] = e.target.checked; markDirty(); } });
+        else if (typeof v === 'number') inp = h('input', { type: 'number', value: v, step: 'any', onchange: e => { o[k] = Number(e.target.value); markDirty(); } });
+        else if (typeof v === 'string' && (v.length > 80 || BLOB_KEYS.test(k))) { let n = 0; try { n = atob(v).length; } catch { n = v.length; } inp = h('span', { class: 'muted' }, `(${n} bytes, kept unchanged)`); }
+        else if (v === null) inp = h('span', { class: 'muted' }, 'null');
+        else inp = h('input', { type: 'text', value: v, onchange: e => { o[k] = e.target.value; markDirty(); } });
+        container.append(h('div', { class: 'leaf' }, h('span', { class: 'k' }, k + ':'), inp));
+      }
+    }
+  };
+  render(obj, wrap, 0); return wrap;
+}
+
+/* ───────────────────────── region view ───────────────────────── */
+async function regionEditor(el, a) {
+  const ro = !!a.info.backupOf;
+  const info = await api('/api/region/slots?' + qs({ rel: a.rel }));
+  const slots = new Map(info.slots.map(s => [s.index, s]));
+  const rx = info.rx, rz = info.rz;
+  const cellKey = (c, r) => c + ',' + r;
+  const byCell = new Map(info.slots.map(s => [cellKey(s.chunkX - rx * 32, s.chunkZ - rz * 32), s]));
+  const idxPart = c => (c < 0 ? (c % 32) + 31 : c % 32);
+  const slotIndexOf = (cx, cz) => idxPart(cx) + idxPart(cz) * 32;   // same quirky formula as the game
+  const L = S.layers ||= { terrain: 1, status: 1, grid: 1, fog: 0, player: 1, vehicle: 1, drone: 1, waypoint: 1, spawn: 1, marker: 1, power: 1, claim: 1, bed: 1, backpack: 1, vending: 1, container: 0, zombie: 0, animal: 0, drop: 0, entity: 0 };
+  const CELL = S.regionCell || 22; const W = 32 * CELL;
+  const cv = h('canvas', { class: 'rg', width: W, height: W, style: `width:${W}px` });
+  const side = h('div', { style: 'flex:1;min-width:300px' });
+  const sel = { slot: null, cell: null, marker: null };
+  let terrain = null, markers = [], explored = {}, elsewhere = [], fogPlayer = null;
+  const ICON = { player: ['🧍', '#4da3ff', 20, 'Players'], vehicle: ['🚗', '#ff9f1c', 18, 'Vehicles'], drone: ['🛸', '#c77dff', 16, 'Drones'], waypoint: ['📍', '#ff5d8f', 15, 'Waypoints'], spawn: ['🏠', '#2ec4b6', 15, 'Spawn / respawn'], marker: ['📌', '#ffd166', 14, 'Map markers'],
+    power: ['⚡', '#ffd60a', 12, 'Power blocks'], claim: ['🚩', '#ef476f', 16, 'Land claims'], bed: ['🛏', '#06d6a0', 15, 'Bedrolls'], backpack: ['🎒', '#cdb4db', 14, 'Dropped backpacks'], vending: ['🏪', '#90be6d', 15, 'Vending machines'],
+    container: ['📦', '#d4a373', 11, 'Containers / workstations'], zombie: ['🧟', '#e63946', 12, 'Zombies'], animal: ['🐾', '#9b8f70', 11, 'Animals'], drop: ['💎', '#a8dadc', 10, 'Dropped items'], entity: ['•', '#999', 10, 'Other entities'] };
+  const px = m => (m.x - rx * 512) / 512 * W, py = m => W - (m.z - rz * 512) / 512 * W;
+  const visibleMarkers = () => markers.filter(m => L[m.type]);
+  const cellRect = s => { const c = s.chunkX - rx * 32, r = s.chunkZ - rz * 32; return [c * CELL, (31 - r) * CELL]; };
+  function draw() {
+    const g = cv.getContext('2d'); const css = getComputedStyle(document.documentElement);
+    g.fillStyle = '#14181f'; g.fillRect(0, 0, W, W);
+    if (L.terrain && terrain && terrain.complete) { g.imageSmoothingEnabled = false; g.drawImage(terrain, 0, 0, W, W); }
+    else for (const s of info.slots) { const [x, y] = cellRect(s); g.fillStyle = '#2b6a3a'; g.fillRect(x + 1, y + 1, CELL - 2, CELL - 2); }
+    const fog = L.fog && fogPlayer && explored[fogPlayer];
+    for (const s of info.slots) {
+      const [x, y] = cellRect(s);
+      if (fog && !explored[fogPlayer][(s.chunkZ - rz * 32) * 32 + (s.chunkX - rx * 32)]) { g.fillStyle = 'rgba(8,10,14,.62)'; g.fillRect(x, y, CELL, CELL); }
+      if (L.status && s.status === 'bad') { g.fillStyle = 'rgba(240,82,79,.5)'; g.fillRect(x, y, CELL, CELL); g.strokeStyle = '#f0524f'; g.lineWidth = 2; g.strokeRect(x + 1, y + 1, CELL - 2, CELL - 2); }
+      else if (L.status && s.status === 'warn') { g.strokeStyle = '#e3a008'; g.lineWidth = 2; g.strokeRect(x + 1, y + 1, CELL - 2, CELL - 2); }
+    }
+    if (L.grid) { g.strokeStyle = 'rgba(255,255,255,.09)'; g.lineWidth = 1; g.beginPath(); for (let i = 0; i <= 32; i++) { g.moveTo(i * CELL + .5, 0); g.lineTo(i * CELL + .5, W); g.moveTo(0, i * CELL + .5); g.lineTo(W, i * CELL + .5); } g.stroke(); }
+    if (sel.cell) { const [c, r] = sel.cell; g.strokeStyle = '#fff'; g.lineWidth = 2; g.strokeRect(c * CELL + 1, (31 - r) * CELL + 1, CELL - 2, CELL - 2); }
+    // markers: low priority first so players end up on top
+    const order = ['entity', 'zombie', 'animal', 'drop', 'container', 'power', 'backpack', 'vending', 'bed', 'claim', 'waypoint', 'marker', 'spawn', 'drone', 'vehicle', 'player'];
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const t of order) for (const m of markers) {
+      if (m.type !== t || !L[t]) continue;
+      const [em, col, sz] = ICON[t]; const x = px(m), y = py(m);
+      g.beginPath(); g.arc(x, y, sz * 0.62, 0, 7); g.fillStyle = 'rgba(10,12,16,.72)'; g.fill(); g.lineWidth = sel.marker === m ? 3 : 1.5; g.strokeStyle = sel.marker === m ? '#fff' : col; g.stroke();
+      g.font = `${sz}px "Segoe UI Emoji","Apple Color Emoji",sans-serif`; g.fillStyle = col; g.fillText(em, x, y + 1);
+      if (t === 'player' || t === 'vehicle') { g.font = 'bold 12px system-ui,sans-serif'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.85)'; g.strokeText(m.label, x, y - sz); g.fillStyle = '#fff'; g.fillText(m.label, x, y - sz); }
+    }
+  }
+  const cellAt = e => { const r = cv.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / (r.width / 32)), 31 - Math.floor((e.clientY - r.top) / (r.height / 32))]; };
+  const markerAt = e => {
+    const r = cv.getBoundingClientRect(); const k = W / r.width; const mx = (e.clientX - r.left) * k, my = (e.clientY - r.top) * k; let best = null, bd = 13 * 13;
+    for (const m of visibleMarkers()) { const d = (px(m) - mx) ** 2 + (py(m) - my) ** 2; if (d < bd) { bd = d; best = m; } }
+    return best;
+  };
+  const mTitle = m => `${ICON[m.type][0]} ${m.label}${m.detail ? '\n' + m.detail : ''}\nx ${Math.round(m.x)}  y ${Math.round(m.y)}  z ${Math.round(m.z)}`;
+  cv.onclick = e => {
+    const m = markerAt(e);
+    if (m) { sel.marker = m; sel.cell = null; draw(); showMarker(m); return; }
+    const [c, r] = cellAt(e); sel.marker = null; sel.cell = [c, r]; const s = byCell.get(cellKey(c, r)); sel.slot = s ? s.index : null; draw();
+    if (s) showSlot(s.index); else showEmpty(c + rx * 32, r + rz * 32);
+  };
+  cv.onmousemove = e => {
+    const m = markerAt(e); if (m) { cv.title = mTitle(m); return; }
+    const [c, r] = cellAt(e); const s = byCell.get(cellKey(c, r));
+    cv.title = s ? `chunk (${s.chunkX}, ${s.chunkZ}) – ${s.status}${s.message ? ': ' + s.message : ''}\nblocks x ${s.chunkX * 16}…${s.chunkX * 16 + 15}, z ${s.chunkZ * 16}…${s.chunkZ * 16 + 15}\n${markers.filter(k => L[k.type] && Math.floor(k.x / 16) === s.chunkX && Math.floor(k.z / 16) === s.chunkZ).length} marker(s) here` : 'no chunk stored here';
+  };
+  function showEmpty(cx, cz) {
+    side.replaceChildren(h('h2', { style: 'margin-top:0' }, `Chunk (${cx}, ${cz}) – empty`), h('div', { class: 'muted' }, 'No chunk is stored here (never generated / explored).'),
+      ro ? null : h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { onclick: () => importChunk(slotIndexOf(cx, cz)) }, '⬆ Import chunk file…')));
+  }
+  function showMarker(m) {
+    const s = byCell.get(cellKey(Math.floor(m.x / 16) - rx * 32, Math.floor(m.z / 16) - rz * 32));
+    side.replaceChildren(h('h2', { style: 'margin-top:0' }, ICON[m.type][0] + ' ' + m.label), m.detail ? h('div', { class: 'muted' }, m.detail) : null,
+      h('div', { class: 'mono', style: 'margin:6px 0' }, `x ${m.x.toFixed(1)}  y ${m.y.toFixed(1)}  z ${m.z.toFixed(1)}`, h('div', { class: 'muted' }, `chunk (${Math.floor(m.x / 16)}, ${Math.floor(m.z / 16)})`)),
+      h('div', { class: 'row' }, m.file && S.files.some(f => f.rel === m.file) ? h('button', { onclick: () => selectFile(m.file) }, 'Open ' + m.file.split('/').pop()) : null,
+        s && s.status !== 'bad' ? h('button', { class: 'primary', onclick: () => open3D({ rel: a.rel, slots: info.slots, centerSlot: s.index, ro }) }, '🧊 3D view here') : null));
+  }
+  async function showSlot(i) {
+    side.replaceChildren(); const s = slots.get(i);
+    if (!s) { side.append(h('div', { class: 'muted' }, 'Empty slot ' + i + ' – no chunk stored here.' + (ro ? '' : ' You can import a chunk file into it.')), ro ? null : h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { onclick: () => importChunk(i) }, '⬆ Import chunk file…'))); return; }
+    side.append(h('h2', { style: 'margin-top:0' }, `Chunk (${s.chunkX}, ${s.chunkZ})`), h('div', { class: 'muted' }, `world blocks X ${s.chunkX * 16}…${s.chunkX * 16 + 15}, Z ${s.chunkZ * 16}…${s.chunkZ * 16 + 15}`),
+      h('div', { class: s.status === 'bad' ? 'err' : s.status === 'warn' ? 'warn' : 'ok', style: 'margin-top:6px' }, s.status === 'bad' ? '✗ damaged: ' + s.message : s.status === 'warn' ? '⚠ ' + s.message : '✓ intact'),
+      h('div', { class: 'muted mono', style: 'margin:6px 0' }, `slot ${s.index} · sectors ${s.offset}–${s.offset + s.length - 1} · stored ${fmtSize(s.dataLength)} · format v${s.version} · ${s.solidBlocks.toLocaleString()} solid blocks${s.entities >= 0 ? ' · ' + s.entities + ' entities' : ''}`));
+    side.append(h('div', { class: 'row' },
+      s.dataLength ? h('a', { href: url('/api/region/export', { rel: a.rel, slot: s.index }), download: `chunk_${s.chunkX}_${s.chunkZ}.ttc` }, h('button', {}, '⬇ Export')) : null,
+      ro ? null : h('button', { onclick: () => importChunk(i) }, '⬆ Replace from file…'),
+      ro ? null : h('button', { class: 'danger', onclick: () => removeChunks([i]) }, 'Remove chunk')));
+    if (s.status !== 'bad') {
+      side.append(h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => open3D({ rel: a.rel, slots: info.slots, centerSlot: i, ro }) }, '🧊 3D view of this chunk…')));
+      const cen = h('div', {}, h('button', { onclick: () => guarded(async () => { const r = await api('/api/region/chunk?' + qs({ rel: a.rel, slot: i })); cen.replaceChildren(censusTable(r.census, i)); }) }, 'Show blocks in this chunk')); side.append(cen);
+    }
+  }
+  function censusTable(census, slot) {
+    const t = h('table', {}, h('tr', {}, h('th', {}, 'Block'), h('th', {}, 'Id'), h('th', {}, 'Count'), h('th', {}, '')));
+    for (const c of census.slice(0, 80)) t.append(h('tr', {}, h('td', {}, c.name), h('td', { class: 'muted' }, c.id), h('td', {}, c.count.toLocaleString()), h('td', {}, ro ? '' : h('button', { class: 'small', onclick: () => replaceDialog(c, slot) }, 'Replace…'))));
+    return t;
+  }
+  async function replaceDialog(c, slot) {
+    const blocks = await api('/api/blocks'); const lst = h('datalist', { id: 'blocklist' }, blocks.map(b => h('option', { value: b.name }))); const to = h('input', { type: 'text', list: 'blocklist', placeholder: 'new block name (e.g. air)', style: 'width:100%' });
+    const scope = h('select', {}, h('option', { value: 'all' }, 'whole region'), slot != null ? h('option', { value: 'slot' }, 'only this chunk') : null);
+    const close = modal(h('div', {}, h('h2', {}, `Replace "${c.name}" (id ${c.id})`), h('div', { class: 'sub' }, 'Every block of this type is rewritten inside the chunk data. Use it to clean up blocks of a removed mod (replace with air) – every chunk is re-validated before it is written.'), lst, h('div', { class: 'row' }, to, scope),
+      h('div', { class: 'row', style: 'justify-content:flex-end' }, h('button', { onclick: () => close() }, 'Cancel'), h('button', { class: 'danger', onclick: () => guarded(async () => {
+        const b = blocks.find(x => x.name === to.value.trim()); if (!b) { toast('Unknown block name – pick one from the list.', 'err'); return; }
+        const res = await api('/api/region/op', { body: { rel: a.rel, op: 'replaceBlocks', from: c.id, to: b.id, slot: scope.value === 'slot' ? slot : null } });
+        close(); toast(res.message); await afterWrite(a.rel); S.tab = 'editor'; renderMain();
+      }) }, 'Replace'))));
+  }
+  async function removeChunks(list) {
+    if (!(await confirmBox('Remove ' + list.length + ' chunk(s)?', 'The game re-generates natural terrain for removed chunks. Anything built there is gone. The region file is backed up first.', 'Remove', true))) return;
+    guarded(async () => { const r = await api('/api/region/op', { body: { rel: a.rel, op: 'remove', slots: list } }); toast(r.message); await afterWrite(a.rel); S.tab = 'editor'; renderMain(); });
+  }
+  function importChunk(i) {
+    const inp = h('input', { type: 'file', onchange: async () => { const f = inp.files[0]; if (!f) return; guarded(async () => { const r = await api('/api/region/import?' + qs({ rel: a.rel, slot: i }), { raw: f }); toast(r.message); await afterWrite(a.rel); S.tab = 'editor'; renderMain(); }); } }); inp.click();
+  }
+  const bad = info.slots.filter(s => s.status === 'bad');
+  const sizeSel = h('select', { onchange: () => { S.regionCell = Number(sizeSel.value); renderMain(); } }, [[14, 'small'], [18, 'medium'], [22, 'large'], [28, 'extra large']].map(([v, l]) => h('option', { value: v, selected: v === CELL }, 'map size: ' + l)));
+  el.append(h('div', { class: 'row' },
+    h('span', { class: 'muted' }, `region (${info.rx}, ${info.rz}) · world x ${rx * 512}…${rx * 512 + 511}, z ${rz * 512}…${rz * 512 + 511} · ${info.slots.length} chunks · ${bad.length} damaged · north is up`),
+    sizeSel,
+    bad.length && !ro ? h('button', { class: 'danger', onclick: () => removeChunks(bad.map(s => s.index)) }, 'Remove all damaged') : null,
+    h('button', { onclick: () => { const t = slots.get(sel.slot) && slots.get(sel.slot).status !== 'bad' ? sel.slot : (info.slots.find(x => x.status !== 'bad') || {}).index; if (t == null) toast('No intact chunk to show.', 'err'); else open3D({ rel: a.rel, slots: info.slots, centerSlot: t, ro }); } }, '🧊 3D view'),
+    h('button', { onclick: () => guarded(async () => { const r = await api('/api/region/census?' + qs({ rel: a.rel })); modal(h('div', {}, h('h2', {}, 'Blocks in the whole region'), h('div', { class: 'sub' }, 'Counts of every block type. Unknown "block#…" ids come from removed mods.'), h('div', { style: 'max-height:55vh;overflow:auto' }, censusTable(r, null)), h('div', { class: 'row', style: 'justify-content:flex-end;margin-top:10px' }, h('button', { onclick: closeModal }, 'Close')))); }) }, 'Block statistics…')));
+  const legend = h('div', { class: 'row', style: 'font-size:12px;gap:4px 12px' });
+  const elseBox = h('div', { class: 'muted', style: 'font-size:12px;margin-bottom:6px' });
+  function drawLegend() {
+    legend.replaceChildren();
+    const toggle = (key, label, count) => h('label', { style: 'display:inline-flex;gap:4px;align-items:center;cursor:pointer' }, h('input', { type: 'checkbox', checked: !!L[key], onchange: e => { L[key] = e.target.checked ? 1 : 0; draw(); } }), label, count != null ? h('span', { class: 'muted' }, `(${count})`) : null);
+    legend.append(toggle('terrain', 'terrain picture'), toggle('status', 'damage overlay'), toggle('grid', 'chunk grid'));
+    const names = Object.keys(explored);
+    if (names.length) {
+      if (!fogPlayer || !explored[fogPlayer]) fogPlayer = names[0];
+      legend.append(toggle('fog', 'dim unexplored for'), h('select', { onchange: e => { fogPlayer = e.target.value; draw(); } }, names.map(n => h('option', { value: n, selected: n === fogPlayer }, n))));
+    }
+    legend.append(h('span', { class: 'muted' }, '|'));
+    for (const t of Object.keys(ICON)) { const n = markers.filter(m => m.type === t).length; if (n || ['player', 'vehicle'].includes(t)) legend.append(toggle(t, ICON[t][0] + ' ' + ICON[t][3], n)); }
+  }
+  el.append(legend, elseBox, h('div', { style: 'display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start' }, cv, side));
+  drawLegend(); draw();
+  terrain = new Image(); terrain.onload = draw; terrain.src = url('/api/region/topdown', { rel: a.rel });
+  api('/api/region/markers?' + qs({ rel: a.rel })).then(r => {
+    markers = r.markers; explored = r.explored || {}; elsewhere = r.elsewhere || [];
+    if (elsewhere.length) elseBox.append('Elsewhere: ', ...elsewhere.map(m => h('span', { style: 'margin-right:10px' }, ICON[m.type][0] + ' ' + m.label + ' is in region (' + m.rx + ', ' + m.rz + ') ', S.files.some(f => f.rel === `Region/r.${m.rx}.${m.rz}.7rg`) ? h('a', { href: '#', onclick: ev => { ev.preventDefault(); selectFile(`Region/r.${m.rx}.${m.rz}.7rg`); } }, 'open') : null)));
+    drawLegend(); draw();
+  }).catch(e => toast('Markers: ' + e.message, 'err'));
+  if (bad.length) { sel.slot = bad[0].index; sel.cell = [bad[0].chunkX - rx * 32, bad[0].chunkZ - rz * 32]; draw(); showSlot(sel.slot); }
+}
+function recoverChunksCard(a, r) {
+  const card = h('div', { class: 'repair', style: 'flex-direction:column;align-items:stretch' }, h('div', { class: 'd' }, h('b', {}, r.label), h('small', {}, r.description)));
+  const sel = h('select', { style: 'min-width:320px' }); const info = h('span', { class: 'muted' }, 'loading backups…');
+  card.append(h('div', { class: 'row' }, sel, h('button', { class: 'primary', onclick: async () => { if (!sel.value) return; if (!(await confirmBox('Recover chunks', 'Copy intact versions of the damaged chunks from:\n' + sel.value, 'Recover', false))) return; guarded(async () => { const res = await api('/api/region/op', { body: { rel: a.rel, op: 'recover', source: sel.value } }); toast(res.message, 'ok', 9000); await afterWrite(a.rel); }); } }, 'Recover'), info));
+  (async () => {
+    const opts = [];
+    for (const f of S.files.filter(f => f.backupOf === a.rel)) opts.push({ v: f.rel, l: f.rel + ' (game backup)' });
+    try { const b = await api('/api/backups'); for (const d of b.backups) if (d.type === 'dir') for (const f of d.files) if (f.rel === a.rel) opts.push({ v: b.root + '\\' + d.name + '\\' + f.rel.replace(/\//g, '\\'), l: 'backup ' + d.name + ' (' + fmtSize(f.size) + ')' }); } catch { }
+    sel.append(...opts.map(o => h('option', { value: o.v }, o.l))); info.textContent = opts.length ? '' : 'no backup copies of this region exist';
+  })();
+  return card;
+}
+
+/* ───────────────────────── dialogs: backups / log ───────────────────────── */
+async function showBackups() {
+  if (!S.state || !S.state.open) return;
+  const r = await api('/api/backups');
+  const c = h('div', {}, h('h2', {}, 'Backups'), h('div', { class: 'sub mono' }, r.root),
+    h('div', { class: 'sub' }, 'Every write made by SaveDoctor first stores the previous file here. "Snapshot backup" stores the whole save as a zip.'));
+  if (!r.backups.length) c.append(h('div', { class: 'muted' }, 'Nothing yet.'));
+  for (const b of r.backups) {
+    if (b.type === 'dir') c.append(h('details', {}, h('summary', {}, b.name + ' – ' + b.files.length + ' file(s)'), b.files.map(f => h('div', { class: 'row', style: 'margin-left:20px' }, h('span', { class: 'mono' }, f.rel), h('span', { class: 'muted' }, fmtSize(f.size)), h('button', { class: 'small', onclick: () => guarded(async () => { if (!(await confirmBox('Restore ' + f.rel + '?', 'Overwrite the live file with this version (the live file is backed up first).', 'Restore', true))) return; await api('/api/backups/restore', { body: { name: b.name, rel: f.rel } }); toast('Restored ' + f.rel); closeModal(); await loadFiles(); startScan(); if (S.sel === f.rel) selectFile(f.rel); }) }, 'Restore')))));
+    else c.append(h('div', { class: 'row' }, h('span', {}, '🗜 ' + b.name), h('span', { class: 'muted' }, fmtSize(b.size)), h('button', { class: 'small', onclick: () => guarded(async () => {
+      const ents = await api('/api/backups/zipentries?' + qs({ name: b.name }));
+      const pick = h('select', {}, ents.map(e => h('option', { value: e.rel }, e.rel + ' (' + fmtSize(e.size) + ')')));
+      const close = modal(h('div', {}, h('h2', {}, b.name), h('div', { class: 'row' }, pick, h('button', { class: 'danger', onclick: () => guarded(async () => { await api('/api/backups/restore-zip', { body: { name: b.name, rel: pick.value } }); close(); toast('Restored ' + pick.value); await loadFiles(); startScan(); }) }, 'Restore this file'))));
+    }) }, 'Restore a file…')));
+  }
+  c.append(h('div', { class: 'row', style: 'justify-content:flex-end;margin-top:12px' }, h('button', { onclick: () => guarded(() => api('/api/reveal', { body: { path: r.root } })) }, 'Open folder'), h('button', { onclick: closeModal }, 'Close')));
+  modal(c);
+}
+async function showLog() {
+  const r = await api('/api/log');
+  modal(h('div', {}, h('h2', {}, 'Actions this session'), r.length ? h('table', {}, r.map(x => h('tr', {}, h('td', { class: 'muted' }, x.time), h('td', { class: 'mono' }, x.rel), h('td', {}, x.action), h('td', {}, x.message)))) : h('div', { class: 'muted' }, 'Nothing has been changed yet.'), h('div', { class: 'row', style: 'justify-content:flex-end;margin-top:12px' }, h('button', { onclick: closeModal }, 'Close'))));
+}
+
+/* ───────────────────────── wire up ───────────────────────── */
+$('#btnOpen').onclick = () => { S.sel = null; S.analysis = null; renderSide(true); const m = $('#main'); m.replaceChildren(); renderOpenPicker(m); };
+$('#btnScan').onclick = () => guarded(async () => { await loadFiles(); await startScan(); await refreshState(); });
+$('#btnSnap').onclick = () => guarded(async () => { toast('Creating snapshot…', 'ok', 2000); const r = await api('/api/snapshot', { method: 'POST', body: {} }); toast(`Snapshot of ${r.files} files (${fmtSize(r.size)}) saved to\n${r.path}`, 'ok', 12000); });
+$('#btnBackups').onclick = () => guarded(showBackups);
+$('#btnLog').onclick = () => guarded(showLog);
+$('#chkForce').onchange = e => guarded(async () => { if (e.target.checked && !(await confirmBox('Allow writes while the game runs?', 'Writing to files the running game also writes will corrupt your save. Only enable this if the server is truly idle/stopped and the detection is wrong.', 'Allow', true))) { e.target.checked = false; return; } await api('/api/settings', { body: { allowWhileRunning: e.target.checked } }); await refreshState(); });
+setInterval(() => { if (!document.hidden) guarded(refreshState); }, 8000);
+window.addEventListener('beforeunload', e => { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+(async function init() {
+  await guarded(async () => {
+    await refreshState();
+    if (S.state.open) { await loadFiles(); startScan(); }
+    renderSide(); renderMain();
+  });
+})();
+</script>
+</body>
+</html>

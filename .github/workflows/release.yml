@@ -1,0 +1,68 @@
+name: build-and-release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Work out the version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF#refs/tags/v}"; else v="0.0.0-dev.${GITHUB_RUN_NUMBER}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: dotnet build src/SaveDoctor.csproj -c Release -p:Version=${{ steps.ver.outputs.version }}
+
+      - name: Publish (needs .NET 8 runtime)
+        run: >
+          dotnet publish src/SaveDoctor.csproj -c Release -r win-x64 --self-contained false
+          -p:PublishSingleFile=true -p:Version=${{ steps.ver.outputs.version }} -o out/fd
+
+      - name: Publish (self-contained)
+        run: >
+          dotnet publish src/SaveDoctor.csproj -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=${{ steps.ver.outputs.version }} -o out/sc
+
+      - name: Package
+        shell: pwsh
+        run: |
+          foreach ($v in @(@{ dir = 'fd'; zip = 'SaveDoctor-win-x64.zip' }, @{ dir = 'sc'; zip = 'SaveDoctor-win-x64-selfcontained.zip' })) {
+            $pkg = "pkg/$($v.dir)"
+            New-Item -ItemType Directory -Force $pkg | Out-Null
+            Copy-Item "out/$($v.dir)/SaveDoctor.exe" $pkg
+            Copy-Item scripts/Start-SaveDoctor.bat, README.md, UNLICENSE $pkg
+            Compress-Archive -Path "$pkg/*" -DestinationPath $v.zip -Force
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SaveDoctor-win-x64
+          path: |
+            SaveDoctor-win-x64.zip
+            SaveDoctor-win-x64-selfcontained.zip
+
+      - name: Attach to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            SaveDoctor-win-x64.zip
+            SaveDoctor-win-x64-selfcontained.zip
