@@ -138,7 +138,22 @@ public static class ChunkCodec
             ci.Deep = true;
             ci.Ok = true;
             try { TailCheck(r, ci, ents, g); }
-            catch (Unverifiable u) { ci.TailNote = u.Message; }
+            catch (Unverifiable u)
+            {
+                // the quick walker only knows composite tile entities – the full chunk model knows all of them
+                try
+                {
+                    var doc = ChunkDoc.ParseInflated(raw, ci.Version, g);
+                    if (doc.TailParsed)
+                    {
+                        ci.Full = true; ci.TailNote = null; ci.Entities = doc.EntCount; ci.TileEntities = doc.Tes.Count;
+                        ci.EntList.Clear(); foreach (var e in doc.Ents) ci.EntList.Add(e);
+                        ci.TeList.Clear(); foreach (var t in doc.Tes) if (t.HasPos) ci.TeList.Add((t.Composite ? t.BlockId : (int)(doc.Blocks[doc.Idx(t.X, t.Y, t.Z)] & 0xFFFF), t.X, t.Y, t.Z));
+                    }
+                    else ci.TailNote = u.Message;
+                }
+                catch { ci.TailNote = u.Message; }
+            }
             catch (ParseFail pf) { ci.Ok = false; ci.Error = "Entity / tile-entity data is garbled: " + pf.Message; ci.ErrorOffset = pf.Offset; }
             catch (EndOfStreamException) { ci.Ok = false; ci.Error = "Entity / tile-entity data ends unexpectedly (truncated chunk)"; }
         }

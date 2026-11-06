@@ -43,6 +43,9 @@ SaveDoctor reads every file **with the same rules the game uses** (the formats w
 - **Copy & paste builds** – copy any box of the world (blocks, containers with contents, lamps…) into a schematic library, paste it elsewhere, in the same or another save; import / export `.sdschem` files.
 - **Trim & reset** – shrink a save by removing chunks nobody needs (with a map preview; players, claims, vehicles, power grid, player-owned storage and constructions are kept), reset POIs or loot in an area, drop all damaged chunks.
 - **History & restore** – timeline of every backup, optional automatic snapshots, compare any backup with the current save and restore single files, single chunks, or just a player's items / position.
+- **Objects & inspector** – vending machines (stock, prices, coins, lock, rent), trader NPC stock, workstations, forges and collectors (contents, burning), written signs (text, author), drawn canvas signs (with a preview of the POI / default / player sign), locks & passwords, and everything lying on the floor: dropped items, loot bags, backpacks, airdrop crates. Open any block in the 3D viewer (*Inspect*) to see and change its state bits (door open, light on, growth stage …), damage, paint per face, rotation, owner and tile entity. Unopened loot bags and containers stay unopened unless you actually change their contents.
+- **Consistency check** – cross-checks tile entities against blocks, items against the id tables and entities against each other (orphaned or duplicated tile entities, chests without data, items of removed mods, entities with duplicate ids or fallen out of the world) with one-click fixes.
+- **Drawn signs** – the `Player/<id>.signs` stores are validated (checksum, structure) and shown with an approximate preview.
 - **Players & claims** – land claims, bedrolls and backpacks from `players.xml`; move / add / remove claims (the claim block's owner changes too), hand over all vehicles, drones and claims of a player, copy a character's items / skills from another save.
 
 **Safety**
@@ -112,7 +115,7 @@ Layout: `src/Core` (save access, backups, game data), `src/Formats` (one handler
 
 ## Limitations
 
-- Storage containers inside chunks are fully editable; other tile entities (lights, doors, signs, workstations, vending machines…) are copied and kept intact but not decoded. Chunks that contain vending machines or generators cannot have their tile entities changed.
+- Storage containers, vending machines, trader stock, workstations, forges, collectors, locks, doors, signs and canvas links are editable; lights, power blocks, traps and sleeper markers are kept intact but not decoded. Item prices shown for vending machines are the base estimate (quality, wear and bartering change them in the game).
 - The block editor cannot place blocks that need a tile entity or consist of several parts from scratch (chests, doors, lamps…) – copy them with the schematic tools. Schematics cannot be rotated.
 - Trimming relies on the game regenerating removed chunks from the world seed; check the preview, keep a snapshot, and stop the game first.
 - Chunk colours in the map / 3D view are derived from block names, not from the game's textures.

@@ -26,13 +26,14 @@ public static partial class Api
         MapSearch(app, Need);
         MapHistory(app, Need);
         MapPlayers(app, Need);
+        MapObjects(app, Need);
 
         // ───────────── block palette for the editor ─────────────
         app.MapGet("/api/world/palette", () =>
         {
             var c = Need();
             var we = new WorldEdit(c);
-            var cat = BlockCatalog.Shared;
+            var cat = BlockCatalog.For(c);
             var list = new List<object[]>();
             foreach (var kv in c.Game.BlockNames.OrderBy(k => k.Key))
             {

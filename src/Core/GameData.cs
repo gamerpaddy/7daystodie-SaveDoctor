@@ -20,6 +20,11 @@ public sealed class GameData
     public HashSet<string> QuestIds { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ItemInfo> Items { get; } = new(StringComparer.OrdinalIgnoreCase);
     public bool HasItemsXml, HasModifiers, HasEntityClasses, HasQuests;
+    /// <summary>Entity class hash → C# class named in entityclasses.xml (EntityLootContainer, EntityBackpack, EntityTrader …), resolved through "extends".</summary>
+    public Dictionary<int, string> EntityKinds { get; } = new();
+    public HashSet<int> RentableTraders { get; } = new() { 5 };
+    public Dictionary<int, string> PaintNames { get; } = new();
+    public Dictionary<string, string> DefaultSigns { get; } = new();
 
     public sealed class ItemInfo
     {
@@ -28,6 +33,8 @@ public sealed class GameData
         public int[]? ModSlots;
         public int StackSize = 1;
         public string? CustomIcon;
+        public float Economic;
+        public int Bundle = 1;
     }
 
     /// <summary>Icon file name (without .png) for an id, honouring the item's CustomIcon property.</summary>
@@ -49,6 +56,9 @@ public sealed class GameData
         try { LoadItems(); } catch { }
         try { LoadEntityClasses(); } catch { }
         try { LoadQuests(); } catch { }
+        try { LoadEntityKinds(); } catch { }
+        try { LoadTraders(); } catch { }
+        try { LoadPaints(); } catch { }
     }
 
     void LoadNim(string rel, Dictionary<int, string> names, Dictionary<string, int> ids)
@@ -92,6 +102,8 @@ public sealed class GameData
                     if (pn == "ShowQuality") cur.ShowQuality = string.Equals(pv, "true", StringComparison.OrdinalIgnoreCase);
                     else if (pn == "Stacknumber" && int.TryParse(pv, out int sn)) cur.StackSize = sn;
                     else if (pn == "CustomIcon") cur.CustomIcon = pv;
+                    else if (pn == "EconomicValue" && float.TryParse(pv, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var ev)) cur.Economic = ev;
+                    else if (pn == "EconomicBundleSize" && int.TryParse(pv, out int eb)) cur.Bundle = Math.Max(1, eb);
                 }
                 else if (cur != null && xr.Name == "passive_effect" && xr.GetAttribute("name") == "ModSlots")
                 {
@@ -125,6 +137,51 @@ public sealed class GameData
         foreach (var n in new[] { "item", "fallingBlock", "fallingBlocks", "fallingTree", "playerMale", "playerFemale", "playerNewMale", "entityJunkDrone" })
             EntityClassNames[MonoHash(n)] = n;
         HasEntityClasses = EntityClassNames.Count > 0;
+    }
+
+
+    /// <summary>A config xml: the copy the server dumped into the save (matches the running game), else the one of the game install.</summary>
+    public string? ConfigFile(string name)
+    {
+        var p = ctx.Abs("ConfigsDump/" + name);
+        return File.Exists(p) ? p : GameInstall.ConfigFile(name);
+    }
+
+    void LoadEntityKinds()
+    {
+        var f = ConfigFile("entityclasses.xml"); if (f == null) return;
+        var cls = new Dictionary<string, (string? ext, string? cls)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var e in System.Xml.Linq.XDocument.Load(f).Descendants("entity_class"))
+        {
+            var n = (string?)e.Attribute("name"); if (n == null) continue;
+            string? c = e.Elements("property").Where(x => (string?)x.Attribute("name") == "Class").Select(x => (string?)x.Attribute("value")).FirstOrDefault();
+            cls[n] = (((string?)e.Attribute("extends")), c);
+        }
+        foreach (var n in cls.Keys)
+        {
+            string? k = null; var cur = n; int guard = 0;
+            while (cur != null && guard++ < 20 && cls.TryGetValue(cur, out var v)) { if (v.cls != null) { k = v.cls; break; } cur = v.ext; }
+            if (k != null) EntityKinds[MonoHash(n)] = k;
+        }
+        EntityKinds[MonoHash("item")] = "EntityItem";
+    }
+
+    void LoadTraders()
+    {
+        var f = ConfigFile("traders.xml"); if (f == null) return;
+        var rent = new HashSet<int>();
+        foreach (var e in System.Xml.Linq.XDocument.Load(f).Descendants("trader_info"))
+            if (int.TryParse((string?)e.Attribute("id"), out int id) && string.Equals((string?)e.Attribute("rentable"), "true", StringComparison.OrdinalIgnoreCase)) rent.Add(id);
+        RentableTraders.Clear(); foreach (var i in rent) RentableTraders.Add(i);
+    }
+
+    void LoadPaints()
+    {
+        var f = ConfigFile("painting.xml"); if (f == null) return;
+        foreach (var e in System.Xml.Linq.XDocument.Load(f).Descendants("paint"))
+            if (int.TryParse((string?)e.Attribute("id"), out int id)) PaintNames[id] = (string?)e.Attribute("name") ?? "";
+        var sg = ConfigFile("signs.xml");
+        if (sg != null) foreach (var e in System.Xml.Linq.XDocument.Load(sg).Descendants("sign")) { var gd = (string?)e.Attribute("guid"); if (gd != null) DefaultSigns[gd.ToLowerInvariant()] = (string?)e.Attribute("name") ?? ""; }
     }
 
     void LoadQuests()
@@ -166,6 +223,17 @@ public sealed class GameData
     {
         if (fullType >= ItemsStartHere && ItemNames.TryGetValue(fullType, out var n)) return ModifierItemNames.Contains(n);
         return false;
+    }
+
+    /// <summary>Base trade value and bundle size of an item / block (items.xml / blocks.xml EconomicValue), or null when unknown.</summary>
+    public (float value, int bundle)? EconomyOf(int fullType)
+    {
+        var n = NameOf(fullType);
+        if (fullType >= ItemsStartHere) return Items.TryGetValue(n, out var it) && it.Economic > 0 ? (it.Economic, it.Bundle) : null;
+        var def = BlockCatalog.For(ctx).Get(n);
+        if (def != null && def.Props.TryGetValue("EconomicValue", out var v) && float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f) && f > 0)
+            return (f, def.Props.TryGetValue("EconomicBundleSize", out var b) && int.TryParse(b, out int bi) ? Math.Max(1, bi) : 1);
+        return null;
     }
 
     public string NameOf(int fullType)

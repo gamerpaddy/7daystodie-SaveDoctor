@@ -118,7 +118,7 @@
     sizeSel.value = String(S3.radius);
     const chkTerr = h('input', { type: 'checkbox', onchange: () => { S3.hideTerrain = chkTerr.checked; applyVisibility(); meshDirty = true; dirty = true; } });
     // ── block editor panel
-    const TOOLS = [['orbit', '🖱 View only'], ['add', '＋ Add block'], ['remove', '✕ Remove'], ['paint', '🖌 Paint (replace)'], ['fill', '▦ Fill box'], ['pick', '⊙ Pick type'], ['select', '⬚ Select area']];
+    const TOOLS = [['orbit', '🖱 View only'], ['add', '＋ Add block'], ['remove', '✕ Remove'], ['paint', '🖌 Paint (replace)'], ['fill', '▦ Fill box'], ['pick', '⊙ Pick type'], ['select', '⬚ Select area'], ['inspect', '🔍 Inspect']];
     const toolSel = h('div', { style: 'display:flex;flex-wrap:wrap;gap:4px;margin:4px 0' });
     const blockSearch = h('input', { type: 'text', placeholder: 'search block name…', style: 'width:100%' });
     const blockList = h('select', { size: 7, style: 'width:100%;margin-top:4px' });
@@ -227,6 +227,7 @@
     function editClick(hit) {
       const W = (x, z) => [x + S3.x0, z + S3.z0];
       if (E.tool === 'pick') { if (hit.id) { E.type = hit.id; updateEditUi(); } return; }
+      if (E.tool === 'inspect') { if (window.WT && WT.inspect) WT.inspect(hit.x + S3.x0, hit.y, hit.z + S3.z0).catch(er => toast(er.message, 'err')); return; }
       if (E.tool === 'add' || E.tool === 'remove' || E.tool === 'paint') {
         const base = E.tool === 'add' ? [hit.px, hit.py, hit.pz] : [hit.x, hit.y, hit.z];
         const [x1, y1, z1, x2, y2, z2] = brushBox(...base);

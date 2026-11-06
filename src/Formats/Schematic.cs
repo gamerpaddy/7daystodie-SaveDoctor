@@ -218,10 +218,10 @@ public static class SchematicOps
             if (dryRun) { res.TeCopied++; continue; }
             var doc = we.ChunkAt(wx, wz, true)!;
             if (!doc.TailParsed) { res.Notes.Add($"chunk {(wx >> 4)},{(wz >> 4)}: tile entities cannot be written there (unsupported tile entities already in the chunk)"); continue; }
-            var rec = ParseRec(Convert.FromBase64String(t.Raw));
+            var rec = ParseRec(Convert.FromBase64String(t.Raw), g);
             if (rec == null) continue;
             doc.RemoveTileEntityAt(wx & 15, wy, wz & 15);
-            doc.Tes.Add(rec.Moved(wx & 15, wy, wz & 15, rec.Composite ? ids[pi] : null));
+            doc.Tes.Add(rec.Moved(wx & 15, wy, wz & 15, rec.Composite ? ids[pi] : null, g));
             we.MarkDirty(wx >> 4, wz >> 4);
             res.TeCopied++;
         }
@@ -243,9 +243,9 @@ public static class SchematicOps
         return res;
     }
 
-    static TeRec? ParseRec(byte[] raw)
+    static TeRec? ParseRec(byte[] raw, GameData g)
     {
-        try { using var r = BinUtil.Reader(raw); return TeRec.ReadOne(r, raw, 0); }
+        try { using var r = BinUtil.Reader(raw); return TeRec.ReadOne(r, raw, 0, g); }
         catch (Exception ex) when (ex is ParseFail || ex is EndOfStreamException) { return null; }
     }
 }

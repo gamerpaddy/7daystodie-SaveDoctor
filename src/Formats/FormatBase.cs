@@ -59,6 +59,7 @@ public static class Registry
         new DecoHandler(),
         new MultiBlockHandler(),
         new MapRegionHandler(),
+        new SignStoreHandler(),
         new XmlHandler(),
         new JsonHandler(),
         new PngHandler(),

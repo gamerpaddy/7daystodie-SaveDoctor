@@ -62,8 +62,20 @@ public sealed class BlockDef
 /// <summary>Block properties read from the game's blocks.xml (optional – only used to protect the block editor from placing broken blocks).</summary>
 public sealed class BlockCatalog
 {
-    static BlockCatalog? shared;
+    static BlockCatalog? shared; static string? sharedKey;
     public static BlockCatalog Shared => shared ??= Load();
+
+    /// <summary>The catalog built from the save's ConfigsDump/blocks.xml (version matched), falling back to the game install.</summary>
+    public static BlockCatalog For(SaveCtx ctx)
+    {
+        var f = ctx.Game.ConfigFile("blocks.xml");
+        var key = f == null ? "" : f + "|" + new FileInfo(f).LastWriteTimeUtc.Ticks;
+        lock (typeof(BlockCatalog))
+        {
+            if (shared == null || sharedKey != key) { shared = Load(f); sharedKey = key; }
+            return shared;
+        }
+    }
 
     public Dictionary<string, BlockDef> ByName = new(StringComparer.OrdinalIgnoreCase);
     public bool Loaded;
@@ -75,12 +87,12 @@ public sealed class BlockCatalog
         "BatteryBank","BladeTrap","Trader","SecureLoot","Loot","Sign","LandClaim","Taskboard","SecureDoor","TriggerDowngrade"
     };
 
-    public static BlockCatalog Load()
+    public static BlockCatalog Load(string? file = null)
     {
         var c = new BlockCatalog();
         try
         {
-            var f = GameInstall.ConfigFile("blocks.xml");
+            var f = file ?? GameInstall.ConfigFile("blocks.xml");
             if (f == null) return c;
             var doc = XDocument.Load(f);
             foreach (var b in doc.Descendants("block"))

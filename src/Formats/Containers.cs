@@ -57,6 +57,13 @@ public static class ContainerOps
         grid.Prefs = sd.Grid.Prefs;
         grid.PlayerOwned = sd.Grid.PlayerOwned;
         grid.TimeTouched = sd.Grid.TimeTouched;
+        if (!resetLoot && (loot == null || (string.IsNullOrWhiteSpace(loot) ? null : loot) == sd.LootList))
+        {
+            // nothing but the stacks may have changed – if they did not, do not touch the container (an unopened loot container stays unopened)
+            using var m1 = new MemoryStream(); using var w1 = new BinaryWriter(m1); sd.Grid.Write(w1); w1.Flush();
+            using var m2 = new MemoryStream(); using var w2 = new BinaryWriter(m2); grid.Write(w2); w2.Flush();
+            if (BinUtil.SameBytes(m1.ToArray(), m2.ToArray())) return "No changes – the container was left as it is.";
+        }
         if (resetLoot)
         {
             if (sd.Grid.PlayerOwned) throw new InvalidOperationException("Player-owned containers have no loot to reset.");

@@ -86,7 +86,7 @@ public sealed class WorldEdit
     {
         if (type == 0) return null;
         if (!g.BlockNames.TryGetValue(type, out var n)) return null;
-        return BlockCatalog.Shared.Get(n);
+        return BlockCatalog.For(ctx).Get(n);
     }
 
     public static (int x, int y, int z) ParentOffset(uint v) => ((int)((v >> 22) & 15) - 8, (int)((v >> 16) & 63) - 32, (int)((v >> 26) & 15) - 8);

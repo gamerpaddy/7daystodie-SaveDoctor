@@ -81,7 +81,7 @@ td input[type=text]{width:100%} td input[type=number]{width:100px}
 .grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:4px 14px}
 .muted{color:var(--muted)} .ok{color:var(--ok)} .err{color:var(--err)} .warn{color:var(--warn)}
 .savebar{position:sticky;bottom:-16px;margin:16px -20px -16px;padding:10px 20px;background:var(--panel);border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;z-index:5}
-#modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:80;padding:20px}
 #modal.show{display:flex}
 #modal .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:760px;width:100%;max-height:88vh;overflow:auto;padding:18px 20px}
 #modal .box h2{margin-top:0}
@@ -147,6 +147,7 @@ canvas.rg{image-rendering:pixelated;border:1px solid var(--line);border-radius:6
 <script src="/history.js"></script>
 <script src="/players.js"></script>
 <script src="/kits.js"></script>
+<script src="/objects.js"></script>
 <script>
 'use strict';
 const TOKEN = '__TOKEN__';
@@ -377,6 +378,7 @@ async function selectFile(rel) {
     S.analysis = await api('/api/analyze?' + qs({ rel }));
     const a = S.analysis;
     S.tab = (a.editable && !a.info.backupOf && a.worst !== 'Error') || a.kind === 'region' && a.worst !== 'Error' ? 'editor' : 'issues';
+    if (a.kind === 'signs' && a.worst !== 'Error' && !a.info.backupOf) S.tab = 'signs';
     renderMain();
   });
 }
@@ -403,11 +405,12 @@ function renderMain() {
   const tabs = [['issues', 'Check & repair' + (nIss ? ' (' + nIss + ')' : '')]];
   if ((a.editable && !a.info.backupOf) || a.kind === 'region') tabs.push(['editor', a.kind === 'region' ? 'Region view' : 'Editor']);
   if (a.info.preview || a.kind === 'png') tabs.push(['preview', 'Preview']);
+  if (a.kind === 'signs' && a.worst !== 'Error') tabs.unshift(['signs', 'Drawn signs']);
   tabs.push(['hex', 'Hex'], ['file', 'File']);
   if (!tabs.some(t => t[0] === S.tab)) S.tab = 'issues';
   m.append(h('div', { class: 'tabs' }, tabs.map(([id, label]) => h('div', { class: 'tab' + (S.tab === id ? ' sel' : ''), onclick: async () => { if (S.dirty && !(await confirmBox('Discard unsaved changes?', 'Switching tabs keeps edits only after saving.', 'Discard', true))) return; S.dirty = false; S.model = null; S.tab = id; renderMain(); } }, label))));
   const body = h('div', { id: 'tabbody' }); m.append(body);
-  ({ issues: tabIssues, editor: tabEditor, hex: tabHex, file: tabFile, preview: tabPreview }[S.tab])(body, a);
+  ({ issues: tabIssues, editor: tabEditor, hex: tabHex, file: tabFile, preview: tabPreview, signs: tabSigns }[S.tab])(body, a);
 }
 
 /* ── issues & repairs ── */

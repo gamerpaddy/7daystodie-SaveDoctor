@@ -500,6 +500,8 @@ public sealed class Ecd
     public float Stress { get; set; }
     public long RequestedBy { get; set; } = -1;
     public byte[] RequestKey { get; set; } = new byte[16];
+    // trader NPC stock
+    public TraderDataM? Trader { get; set; }
 
     public bool IsPlayerClass(GameData g) => g.EntityClassNames.TryGetValue(EntityClass, out var n) ? (n == "playerMale" || n == "playerFemale") : false;
 
@@ -571,7 +573,7 @@ public sealed class Ecd
         }
         int edl = r.ReadUInt16();
         e.EntityData = edl > 0 ? r.ReadBytes(edl) : Array.Empty<byte>();
-        if (r.ReadBoolean()) throw new ParseFail("Entities with trader data are not supported by the editor", r.Pos());
+        if (r.ReadBoolean()) e.Trader = TraderDataM.Read(r, g);
         if (ec == H("entityJunkDrone"))
         {
             e.BelongsPlayerId = r.ReadInt32();
@@ -632,7 +634,8 @@ public sealed class Ecd
         }
         w.Write((ushort)EntityData.Length);
         if (EntityData.Length > 0) w.Write(EntityData);
-        w.Write(false); // trader data
+        w.Write(Trader != null);
+        Trader?.Write(w);
         if (ec == H("entityJunkDrone")) { w.Write(BelongsPlayerId); w.Write(OrderState); }
         w.Write(Stress);
         w.Write(RequestedBy);

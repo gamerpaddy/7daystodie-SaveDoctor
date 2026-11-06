@@ -271,7 +271,7 @@ public sealed class ChallengeJournalM
     }
 }
 
-public sealed class RecipeQueueM
+public sealed partial class RecipeQueueM
 {
     public int Multiplier { get; set; }
     public bool IsCrafting { get; set; }
@@ -448,23 +448,7 @@ public sealed class PlayerFile
         n = r.ReadByte();
         for (int i = 0; i < n; i++)
         {
-            long at = r.Pos();
-            int rv = r.ReadUInt16();
-            if (rv < 2) throw new ParseFail("Legacy crafting queue entry", at);
-            var q = new RecipeQueueM { Multiplier = r.ReadInt16(), IsCrafting = r.ReadBoolean(), TimeLeft = r.ReadSingle() };
-            q.HasRepair = r.ReadBoolean();
-            if (q.HasRepair) { q.RepairItem = ItemVal.ReadOrNull(r, g); q.AmountToRepair = r.ReadUInt16(); }
-            q.Quality = r.ReadByte(); q.StartingEntityId = r.ReadInt32(); q.OneItemCraftTime = r.ReadSingle();
-            q.HasRecipe = r.ReadBoolean();
-            if (q.HasRecipe)
-            {
-                r.ReadUInt16();
-                q.RecipeItemType = r.ReadInt32(); q.RecipeCount = r.ReadInt32(); q.RecipeIsScrap = r.ReadBoolean();
-                q.RecipeCraftTime = r.ReadSingle(); q.RecipeExp = r.ReadInt32(); q.RecipeArea = r.Str();
-                int ing = r.ReadInt32();
-                if (ing < 0 || ing > 1000) throw new ParseFail("Implausible ingredient count " + ing, r.Pos() - 4);
-                for (int k = 0; k < ing; k++) q.Ingredients.Add(Stack.Read(r, g));
-            }
+            var q = RecipeQueueM.Read(r, g);
             p.CraftQueue.Add(q);
         }
         p.FavoriteRecipes = Strings(r);
@@ -530,18 +514,7 @@ public sealed class PlayerFile
         w.Write((byte)CraftQueue.Count);
         foreach (var q in CraftQueue)
         {
-            w.Write((ushort)2); w.Write((short)q.Multiplier); w.Write(q.IsCrafting); w.Write(q.TimeLeft);
-            w.Write(q.HasRepair);
-            if (q.HasRepair) { if (q.RepairItem == null) w.Write((byte)0); else q.RepairItem.Write(w); w.Write((ushort)q.AmountToRepair); }
-            w.Write((byte)q.Quality); w.Write(q.StartingEntityId); w.Write(q.OneItemCraftTime);
-            w.Write(q.HasRecipe);
-            if (q.HasRecipe)
-            {
-                w.Write((ushort)1);
-                w.Write(q.RecipeItemType); w.Write(q.RecipeCount); w.Write(q.RecipeIsScrap); w.Write(q.RecipeCraftTime); w.Write(q.RecipeExp); w.Str(q.RecipeArea);
-                w.Write(q.Ingredients.Count);
-                foreach (var s in q.Ingredients) s.Write(w);
-            }
+            q.Write(w);
         }
         WriteStrings(w, FavoriteRecipes);
         w.Write(TotalItemsCrafted); w.Write(DistanceWalked); w.Write(LongestLife); w.Write(GameStageBornAtWorldTime);

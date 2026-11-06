@@ -29,7 +29,7 @@
     const body = h('div', { id: 'wtbody' });
     m.append(tabs, body);
     const t = WT.tabs.find(x => x.id === WT.tab) || WT.tabs[0];
-    guarded(async () => t.render(body));
+    guarded(async () => { try { await t.render(body); } catch (e) { if (e.message !== 'cancelled') throw e; } });
   };
 
   // ───────── index status helper
@@ -165,6 +165,7 @@
         h('div', { style: 'display:flex;gap:14px;flex-wrap:wrap' }, h('div', {}, cells), side),
         h('div', { class: 'row', style: 'margin-top:8px' }, fld('Loot list', h('input', { type: 'text', value: loot, style: 'width:200px', onchange: e => { loot = e.target.value; } }))),
         h('div', { class: 'row', style: 'justify-content:flex-end;margin-top:12px' },
+          h('button', { title: 'Lock, password, owner and block state of this container', onclick: () => guarded(async () => { closeModal(); await WT.inspect(x, y, z); }) }, 'Lock / owner / block…'),
           h('button', { onclick: () => KIT.open({ title: c.block, names: M.names, groups: { container: { label: 'Container', items: grid.items } } }) }, 'Export kit…'),
           h('button', { onclick: () => guarded(() => openContainer(x, y, z)) }, 'Revert'),
           !c.playerOwned && c.loot ? h('button', { title: 'Empties the container and marks it untouched – new loot is rolled the next time somebody opens it', onclick: () => guarded(async () => { if (!WT.needWrite()) return; const r = await api('/api/world/container', { body: { x, y, z, grid, resetLoot: true } }); toast(r.message); closeModal(); }) }, 'Reset loot (re-roll)') : null,

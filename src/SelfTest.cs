@@ -4,7 +4,7 @@ using SaveDoctor.Formats;
 namespace SaveDoctor;
 
 /// <summary>Round-trip checks of the parsers against a real save (read-only, never writes).</summary>
-public static class SelfTest
+public static partial class SelfTest
 {
     static int fails;
     static void Check(bool ok, string what, string? detail = null)
@@ -118,7 +118,7 @@ public static class SelfTest
             {
                 // full chunk model: parse → encode must give the identical inflated bytes
                 int n = 0, same2 = 0, tail = 0, hmOk = 0, tes = 0, storages = 0, storageOk = 0, comp = 0;
-                var feats = new Dictionary<int, int>();
+                var canvasIds = new HashSet<string>(); var feats = new Dictionary<int, int>(); var featKinds = new Dictionary<string, int>(); var teTypes = new Dictionary<int, int>(); int entInv = 0, entMirror = 0, entApplyOk = 0, entApplyBad = 0, legacyOk = 0, legacyNote = 0, entTotal = 0, entEdit = 0, traders = 0; var entBad = new List<string>();
                 string? firstBad = null;
                 var notes = new Dictionary<string, int>();
                 foreach (var s in sc.Slots.Where(s => s.Blob != null && s.Chunk is { Ok: true } && s.Chunk.Version == 47))
@@ -130,7 +130,7 @@ public static class SelfTest
                         var doc = ChunkDoc.Parse(s.Blob!, g);
                         var enc = doc.EncodeInflated();
                         if (BinUtil.SameBytes(raw, enc)) same2++; else firstBad ??= $"chunk {s.ChunkX},{s.ChunkZ} first diff at {BinUtil.FirstDiff(raw, enc)}";
-                        if (doc.TailParsed) tail++; else notes[doc.TailNote ?? "?"] = notes.GetValueOrDefault(doc.TailNote ?? "?") + 1;
+                        if (doc.TailParsed) { tail++; foreach (var er in doc.EntRecs) { entTotal++; if (er.Editable) entEdit++; else entBad.Add(g.EntityClassName(er.E.EntityClass)); if (er.E.Trader != null) traders++; var det = EntityTools.Describe(er, 0, g); if (det.Inventory != null || det.DroppedItem != null) { entInv++; if (det.HasMirror) entMirror++; if (det.Inventory != null && er.Editable) { var clone = Json.De<Grid>(System.Text.Json.JsonSerializer.SerializeToElement(det.Inventory, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)))!; var origE = (byte[])er.E.EntityData.Clone(); var origB = er.E.Bag == null ? null : (byte[])er.E.Bag.Clone(); try { EntityTools.Apply(er, new EntityEdit { Inventory = clone }, g); if (clone.TimeTouched != 0 || det.Inventory.TimeTouched == 0) { } if (BinUtil.SameBytes(origE, er.E.EntityData) && (origB == null || BinUtil.SameBytes(origB, er.E.Bag!))) entApplyOk++; else if (det.Inventory.TimeTouched == 0) entApplyOk++; else entApplyBad++; } catch (Exception ex) { entApplyBad++; firstBad ??= "entity apply: " + ex.Message; } finally { er.E.EntityData = origE; er.E.Bag = origB; er.Dirty = false; } } } } } else notes[doc.TailNote ?? "?"] = notes.GetValueOrDefault(doc.TailNote ?? "?") + 1;
                         var saved = (byte[])doc.Mid.Clone();
                         doc.RecalcHeights();
                         bool hm = true; for (int i = 0; i < 256; i++) if (saved[i] != doc.Mid[i]) { hm = false; break; }
@@ -138,12 +138,16 @@ public static class SelfTest
                         foreach (var t in doc.Tes)
                         {
                             tes++;
+                            teTypes[t.Type] = teTypes.GetValueOrDefault(t.Type) + 1;
+                            if (t.Legacy != null) { legacyOk++; if (!BinUtil.SameBytes(t.Raw, LegacyTe.Encode(new TeRec { Type = t.Type, X = t.X, Y = t.Y, Z = t.Z, HeapTime = t.HeapTime, Legacy = t.Legacy }))) firstBad ??= "legacy TE re-encode differs"; }
+                            if (t.LegacyNote != null) legacyNote++;
                             if (!t.Composite) continue;
                             comp++;
                             if (!BinUtil.SameBytes(t.Raw, (new TeRec { Head = t.Head, BodyPre = t.BodyPre, Feats = t.Feats, Dirty = true }).Encode())) firstBad ??= "TE re-encode differs";
                             foreach (var f in t.Feats!)
                             {
                                 feats[f.Hash] = feats.GetValueOrDefault(f.Hash) + 1;
+                                var fv = TeFeatures.Decode(f, g); if (fv.Data is CanvasM cvm) canvasIds.Add(cvm.Library + " " + cvm.Guid); featKinds[fv.Name + (fv.Editable ? "" : " (raw)")] = featKinds.GetValueOrDefault(fv.Name + (fv.Editable ? "" : " (raw)")) + 1;
                                 if (f.Hash == StorageData.StorageHash)
                                 {
                                     storages++;
@@ -156,7 +160,10 @@ public static class SelfTest
                     catch (Exception ex) { firstBad ??= $"chunk {s.ChunkX},{s.ChunkZ}: {ex.Message}"; }
                 }
                 Check(n == same2, $"chunk model roundtrip {rel}", $"{same2}/{n} identical, tail split {tail}, heightmap matches recalculation {hmOk}, tile entities {tes} ({comp} composite), storage payloads {storageOk}/{storages}{(firstBad != null ? ", " + firstBad : "")}");
+                Console.WriteLine("      tile entity types: " + string.Join(", ", teTypes.OrderBy(k => k.Key).Select(k => $"{LegacyTe.TypeName(k.Key)}×{k.Value}")) + $"; typed models {legacyOk}, read-only {legacyNote}; entities {entEdit}/{entTotal} re-encode identically, traders {traders}, with inventory/item {entInv} (mirrored {entMirror}), inventory write-back ok {entApplyOk} / bad {entApplyBad}" + (entBad.Count > 0 ? ", not identical: " + string.Join(",", entBad.Distinct()) : ""));
                 foreach (var nt in notes) Console.WriteLine($"      tail not split: {nt.Value}x {nt.Key}");
+                if (canvasIds.Count > 0) Console.WriteLine("      canvas sign ids: " + string.Join(" | ", canvasIds.Take(6)));
+                if (featKinds.Count > 0) Console.WriteLine("      features: " + string.Join(", ", featKinds.OrderByDescending(k => k.Value).Select(k => k.Key + "×" + k.Value)));
                 if (feats.Count > 0) Console.WriteLine("      TE feature hashes: " + string.Join(", ", feats.OrderByDescending(k => k.Value).Take(14).Select(k => $"{k.Key:X8}x{k.Value}")));
             }
             // chunk tail diagnostics
@@ -167,6 +174,7 @@ public static class SelfTest
         }
 
         WorldEditTest(ctx);
+        SyntheticTests(ctx.Game);
 
         foreach (var rel in ctx.ListFilesRel().Where(r => r.EndsWith(".7rm")))
         {
@@ -281,6 +289,24 @@ public static class SelfTest
                 Check(bad == 0 && res.Placed == back.BlockCount && teAtDest == back.Tes.Count && dry.Placed == res.Placed, "schematic paste reproduces blocks and tile entities", $"{same} cells identical, {teAtDest}/{back.Tes.Count} tile entities, {res.Message}");
                 var chk = RegionIO.Scan(ctx.ReadAll(rel), rx, rz, true, false, g);
                 Check(chk.Bad == 0 && chk.Slots.All(s => s.Chunk is { Ok: true }), "region still valid after paste");
+            }
+            // consistency check: create an orphan tile entity by hand, find it, fix it
+            {
+                var docs = RegionIO.Scan(ctx.ReadAll(rel), rx, rz, false, false).Slots.Where(s => s.Blob != null).Select(s => ChunkDoc.Parse(s.Blob!, g)).Where(d => d.TailParsed && d.Tes.Any(e => e.Composite && !e.Feats!.Any(f => f.Hash == StorageData.StorageHash))).ToList();
+                Console.WriteLine($"      orphan test candidates: {docs.Count}");
+                if (docs.Count > 0)
+                {
+                    var d0 = docs[0]; var t0 = d0.Tes.First(e => e.Composite && !e.Feats!.Any(f => f.Hash == StorageData.StorageHash));
+                    var weO = new WorldEdit(ctx);
+                    var dd = weO.Chunk(d0.X, d0.Z, true)!;
+                    dd.Blocks[dd.Idx(t0.X, t0.Y, t0.Z)] = 0;        // block gone, tile entity stays
+                    weO.MarkDirty(d0.X, d0.Z); weO.Commit("selftest");
+                    var cr = WorldCheck.Get(ctx, true); while (!cr.Done) Thread.Sleep(50);
+                    bool found = cr.Issues.Any(i => i.Code == "te-orphan" && i.Cx == d0.X && i.Cz == d0.Z && i.Y == t0.Y);
+                    var msgFix = WorldCheck.Fix(ctx, "te-orphan");
+                    var cr2 = WorldCheck.Get(ctx, true); while (!cr2.Done) Thread.Sleep(50);
+                    Check(found && !cr2.Issues.Any(i => i.Code == "te-orphan" && i.Cx == d0.X && i.Cz == d0.Z && i.Y == t0.Y), "consistency check finds an orphan tile entity and the fix removes it", msgFix);
+                }
             }
         }
         catch (Exception ex) { Check(false, "world edit test", ex.Message + " @ " + ex.StackTrace); }

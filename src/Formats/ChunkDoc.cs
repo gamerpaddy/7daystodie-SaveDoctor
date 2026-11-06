@@ -74,6 +74,22 @@ public sealed class TeFeat
     public byte[] Payload = Array.Empty<byte>();
 }
 
+/// <summary>An entity stored in a chunk (zombie, animal, dropped item, backpack, loot container, trader …). Edited entities are re-encoded; the rest keep their bytes.</summary>
+public sealed class EntRec
+{
+    public Ecd E = new();
+    public byte[] Raw = Array.Empty<byte>();
+    public bool Editable;      // Encode(Decode(raw)) reproduces the stored bytes, so changes are safe to write
+    public bool Dirty;
+    public byte[] Encode(GameData g)
+    {
+        if (!Dirty) return Raw;
+        using var ms = new MemoryStream(); using var w = new BinaryWriter(ms);
+        E.Write(w, g); w.Flush();
+        return ms.ToArray();
+    }
+}
+
 /// <summary>A tile entity record of a chunk. Composite ones (type 25) are split into header / features; other types are kept as opaque bytes.</summary>
 public sealed class TeRec
 {
@@ -87,27 +103,19 @@ public sealed class TeRec
     public byte[]? BodyPre;           // after the marker: block id + owner + feature count
     public List<TeFeat>? Feats;
     public bool Dirty;
+    public ulong HeapTime;            // non-composite types: heap-map update time of the common header
+    public ILegacyTe? Legacy;         // decoded model of a non-composite tile entity (editable)
+    public string? LegacyNote;
 
-    public static TeRec ReadOne(BinaryReader r, byte[] raw, int i)
+    public static TeRec ReadOne(BinaryReader r, byte[] raw, int i, GameData g)
     {
             long recStart = r.Pos();
             int type = r.ReadInt32();
             var rec = new TeRec { Type = type };
-            if (type == 18 || type == 20 || type == 21)
+            if (type != 25)
             {
-                // legacy fixed-layout types: base (ushort 19, pos, ulong) + local version (ushort 18) + payload
-                int bv = r.ReadUInt16();
-                var p3 = r.Vec3i();
-                r.ReadUInt64();
-                int lv = r.ReadUInt16();
-                if (bv != 19 || lv != 18) throw new ParseFail($"tile entity type {type} has unexpected versions {bv}/{lv}", recStart);
-                if (type == 18) r.BaseStream.Seek(27, SeekOrigin.Current);
-                else if (type == 20) r.BaseStream.Seek(12, SeekOrigin.Current);
-                else PlatformId.Read(r);
-                rec.HasPos = true; rec.X = p3.X; rec.Y = p3.Y; rec.Z = p3.Z;
-                rec.Raw = new byte[r.Pos() - recStart];
-                Array.Copy(raw, recStart, rec.Raw, 0, rec.Raw.Length);
-                return rec;
+                var lr = LegacyTe.Read(r, raw, recStart, type, g);
+                if (lr != null) return lr;
             }
             if (type != 25) throw new ParseFail($"tile entity type {type} cannot be split without its format", recStart);
             int rv = r.ReadUInt16();
@@ -146,13 +154,13 @@ public sealed class TeRec
     }
 
     /// <summary>A copy of this record placed at another chunk-local position (and, for composite records, bound to another block id).</summary>
-    public TeRec Moved(int lx, int ly, int lz, int? newBlockId)
+    public TeRec Moved(int lx, int ly, int lz, int? newBlockId, GameData g)
     {
         var raw = (byte[])Encode().Clone();
         BitConverter.GetBytes(lx).CopyTo(raw, 6); BitConverter.GetBytes(ly).CopyTo(raw, 10); BitConverter.GetBytes(lz).CopyTo(raw, 14);
         if (newBlockId.HasValue && Composite) BitConverter.GetBytes(newBlockId.Value).CopyTo(raw, Head!.Length + 4);
         using var r = BinUtil.Reader(raw);
-        return ReadOne(r, raw, 0);
+        return ReadOne(r, raw, 0, g);
     }
 
     /// <summary>The owner stored in a composite tile entity (null when none).</summary>
@@ -177,7 +185,9 @@ public sealed class TeRec
 
     public byte[] Encode()
     {
-        if (!Dirty || !Composite) return Raw;
+        if (!Dirty) return Raw;
+        if (Legacy != null) return LegacyTe.Encode(this);
+        if (!Composite) return Raw;
         using var ms = new MemoryStream();
         using var w = new BinaryWriter(ms);
         w.Write(Head!);
@@ -222,6 +232,9 @@ public sealed class ChunkDoc
     public bool TailParsed;          // entities / tile entities split up
     public int EntCount;
     public List<(int cls, float x, float y, float z)> Ents = new();
+    public List<EntRec> EntRecs = new();
+    public GameData? Game;
+    public bool EntitiesDirty;       // entities were added / removed / edited – rewrite the entity section from EntRecs
     public byte[] EntBytes = Array.Empty<byte>();
     public List<TeRec> Tes = new();
     public byte[] Rest = Array.Empty<byte>();
@@ -316,14 +329,23 @@ public sealed class ChunkDoc
         EntCount = r.ReadInt32();
         if (EntCount < 0 || EntCount > 20000) throw new ParseFail("Implausible entity count", r.Pos() - 4);
         int entStart = (int)r.Pos();
-        Ents = new();
-        for (int i = 0; i < EntCount; i++) { var ent = Ecd.Read(r, g, false); Ents.Add((ent.EntityClass, ent.PosX, ent.PosY, ent.PosZ)); }
+        Ents = new(); EntRecs = new(); Game = g;
+        for (int i = 0; i < EntCount; i++)
+        {
+            long es = r.Pos();
+            var ent = Ecd.Read(r, g, false);
+            Ents.Add((ent.EntityClass, ent.PosX, ent.PosY, ent.PosZ));
+            var rec = new EntRec { E = ent, Raw = new byte[r.Pos() - es] };
+            Array.Copy(raw, es, rec.Raw, 0, rec.Raw.Length);
+            try { using var ms = new MemoryStream(); using var w = new BinaryWriter(ms); ent.Write(w, g); w.Flush(); rec.Editable = BinUtil.SameBytes(ms.ToArray(), rec.Raw); } catch { }
+            EntRecs.Add(rec);
+        }
         EntBytes = new byte[r.Pos() - entStart];
         Array.Copy(raw, entStart, EntBytes, 0, EntBytes.Length);
         int te = r.ReadInt32();
         if (te < 0 || te > 100000) throw new ParseFail("Implausible tile entity count", r.Pos() - 4);
         var list = new List<TeRec>();
-        for (int i = 0; i < te; i++) list.Add(TeRec.ReadOne(r, raw, i));
+        for (int i = 0; i < te; i++) list.Add(TeRec.ReadOne(r, raw, i, g));
         int restStart = (int)r.Pos();
         Rest = new byte[raw.Length - restStart];
         Array.Copy(raw, restStart, Rest, 0, Rest.Length);
@@ -379,8 +401,9 @@ public sealed class ChunkDoc
         if (TailParsed)
         {
             w.Write(NeedsLight);
-            w.Write(EntCount);
-            w.Write(EntBytes);
+            bool rebuild = EntitiesDirty || EntRecs.Any(e => e.Dirty);
+            w.Write(rebuild ? EntRecs.Count : EntCount);
+            if (rebuild) foreach (var e in EntRecs) w.Write(e.Encode(Game!)); else w.Write(EntBytes);
             w.Write(Tes.Count);
             foreach (var t in Tes) w.Write(t.Encode());
             w.Write(Rest);
@@ -466,6 +489,13 @@ public sealed class ChunkDoc
     }
 
     public TeRec? TileEntityAt(int x, int y, int z) => Tes.FirstOrDefault(t => t.HasPos && t.X == x && t.Y == y && t.Z == z);
+
+    // ---------- per-block state (damage, paint, …)
+    public int DamageAt(int i) => Damage.Planes[0][i] | (Damage.Planes[1][i] << 8);
+    public void SetDamage(int i, int v) { Damage.Planes[0][i] = (byte)v; Damage.Planes[1][i] = (byte)(v >> 8); }
+    /// <summary>Paint of the six faces (face order of the game's BlockFace: top, bottom, north, south, west, east).</summary>
+    public int[] TexturesAt(int i) { var a = new int[6]; for (int k = 0; k < 6; k++) a[k] = Textures.Planes[k][i]; return a; }
+    public void SetTextures(int i, int[] v) { for (int k = 0; k < 6; k++) Textures.Planes[k][i] = (byte)(k < v.Length ? v[k] : 0); }
 
     public int SolidCount()
     {

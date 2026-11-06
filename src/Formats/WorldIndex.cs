@@ -13,6 +13,15 @@ public sealed class ContainerRec
     public List<(int type, int count, int quality)> Items = new();
 }
 
+/// <summary>Something worth listing in the Objects tab: vending machines, workstations, signs, locked doors, entities lying around …</summary>
+public sealed class ObjRec
+{
+    public string Kind = "", Name = "", Detail = "";
+    public int X, Y, Z, Cx, Cz, Index = -1, Count;
+    public string? Owner;
+    public bool Flag;
+}
+
 public sealed class ChunkStat
 {
     public int Cx, Cz, Solid, Entities, TileEntities, Constructed, OwnedContainers, Bytes;
@@ -33,6 +42,7 @@ public sealed class WorldIndex
     public int Regions, Chunks, BadChunks, UnsplitChunks;
     public List<ChunkStat> Stats = new();
     public List<ContainerRec> Containers = new();
+    public List<ObjRec> Objects = new();
     public Dictionary<int, long> BlockTotals = new();
     public Dictionary<int, int> TeBlocks = new();       // block id → tile entity count
     public List<(int cls, float x, float y, float z)> Entities = new();
@@ -85,6 +95,7 @@ public static class WorldIndexer
             idx.Total = files.Count;
             var stats = new ConcurrentBag<ChunkStat>();
             var conts = new ConcurrentBag<ContainerRec>();
+            var objs = new ConcurrentBag<ObjRec>();
             var ents = new ConcurrentBag<(int, float, float, float)>();
             var teBlocks = new ConcurrentDictionary<int, int>();
             var totals = new ConcurrentDictionary<int, long>();
@@ -112,9 +123,45 @@ public static class WorldIndexer
                     stats.Add(cs);
                     if (!d.TailParsed) { Interlocked.Increment(ref unsplit); continue; }
                     foreach (var e in d.Ents) ents.Add((e.cls, e.x, e.y, e.z));
+                    for (int ei = 0; ei < d.EntRecs.Count; ei++)
+                    {
+                        var er = d.EntRecs[ei];
+                        var det = EntityTools.Describe(er, ei, g);
+                        string kind = det.Trader != null ? "trader" : det.DroppedItem != null ? "drop" : det.Kind == "EntityBackpack" ? "backpack" : det.Kind == "EntitySupplyCrate" ? "airdrop" : det.Kind == "EntityLootContainer" ? "lootbag" : det.Inventory != null ? "carrying" : "";
+                        if (kind == "") continue;
+                        int used = det.Inventory?.Items.Count(x => x.Count > 0) ?? 0;
+                        string detail = kind == "drop" ? g.NameOf(det.DroppedItem!.Item.Type) + " ×" + det.DroppedItem.Count : kind == "trader" ? $"{det.Trader!.Primary.Count} stock entries, {det.Trader.AvailableMoney} coins" : $"{used}/{det.Inventory?.Items.Count ?? 0} slots used";
+                        objs.Add(new ObjRec { Kind = kind, Name = det.Name, Detail = detail, X = (int)Math.Floor(det.X), Y = (int)Math.Floor(det.Y), Z = (int)Math.Floor(det.Z), Cx = d.X, Cz = d.Z, Index = ei, Count = kind == "drop" ? det.DroppedItem!.Count : used, Flag = !er.Editable });
+                    }
                     foreach (var te in d.Tes)
                     {
+                        if (te.Legacy != null)
+                        {
+                            int wx = d.X * 16 + te.X, wz = d.Z * 16 + te.Z;
+                            switch (te.Legacy)
+                            {
+                                case VendingM vm: objs.Add(new ObjRec { Kind = "vending", Name = "trader " + vm.Trader.TraderId, Detail = $"{vm.Trader.Primary.Count} stock entries, {vm.Trader.AvailableMoney} coins" + (vm.Rentable ? ", rentable" : "") + (vm.Locked ? ", locked" : ""), X = wx, Y = te.Y, Z = wz, Count = vm.Trader.Primary.Count, Owner = vm.Owner?.UserId, Flag = vm.Locked }); break;
+                                case WorkstationM wm: objs.Add(new ObjRec { Kind = "workstation", Name = g.NameOf(d.Blocks[d.Idx(te.X, te.Y, te.Z)] is var bv ? (int)(bv & 0xFFFF) : 0), Detail = $"{wm.Input.Count(x => x.Count > 0) + wm.Output.Count(x => x.Count > 0) + wm.Fuel.Count(x => x.Count > 0)} items, {(wm.IsBurning ? "burning" : "idle")}, queue {wm.Queue.Count(q => q.HasRecipe)}", X = wx, Y = te.Y, Z = wz, Count = wm.Input.Count(x => x.Count > 0) + wm.Output.Count(x => x.Count > 0), Flag = wm.IsBurning }); break;
+                                case ForgeM fm: objs.Add(new ObjRec { Kind = "forge", Name = g.NameOf((int)(d.Blocks[d.Idx(te.X, te.Y, te.Z)] & 0xFFFF)), Detail = $"metal {fm.MetalInForge}", X = wx, Y = te.Y, Z = wz, Count = fm.Input.Count(x => x.Count > 0) + fm.Fuel.Count(x => x.Count > 0) }); break;
+                                case CollectorM cm: objs.Add(new ObjRec { Kind = "collector", Name = g.NameOf((int)(d.Blocks[d.Idx(te.X, te.Y, te.Z)] & 0xFFFF)), Detail = $"{cm.Items.Count(x => x.Count > 0)} items", X = wx, Y = te.Y, Z = wz, Count = cm.Items.Count(x => x.Count > 0) }); break;
+                            }
+                        }
                         if (!te.Composite) { teBlocks.AddOrUpdate(-te.Type, 1, (_, o) => o + 1); continue; }
+                        foreach (var ft in te.Feats!)
+                        {
+                            var kind = TeFeatures.KindOf(ft.Hash);
+                            if (kind is not ("signable" or "canvas" or "lockable" or "landclaim")) continue;
+                            var fv = TeFeatures.Decode(ft, g);
+                            int wx = d.X * 16 + te.X, wz = d.Z * 16 + te.Z;
+                            string bn = g.NameOf(te.BlockId);
+                            switch (fv.Data)
+                            {
+                                case SignableM sg when sg.HasText && sg.Text.Length > 0: objs.Add(new ObjRec { Kind = "sign", Name = bn, Detail = sg.Text, X = wx, Y = te.Y, Z = wz, Owner = sg.Author?.UserId }); break;
+                                case CanvasM cv: objs.Add(new ObjRec { Kind = "canvas", Name = bn, Detail = cv.Library + " / " + cv.Guid, X = wx, Y = te.Y, Z = wz, Flag = cv.Library != "[D]" && !char.IsLetter(cv.Library.FirstOrDefault()) }); break;
+                                case LockableM lk when lk.Locked || lk.PasswordHash.Length > 0: objs.Add(new ObjRec { Kind = "lock", Name = bn, Detail = (lk.Locked ? "locked" : "unlocked") + (lk.PasswordHash.Length > 0 ? ", password" : "") + $", {lk.Allowed.Count} allowed", X = wx, Y = te.Y, Z = wz, Flag = lk.Locked, Owner = te.GetOwner()?.UserId }); break;
+                                case LandClaimM: objs.Add(new ObjRec { Kind = "claim", Name = bn, Detail = "land claim block", X = wx, Y = te.Y, Z = wz, Owner = te.GetOwner()?.UserId }); break;
+                            }
+                        }
                         teBlocks.AddOrUpdate(te.BlockId, 1, (_, o) => o + 1);
                         var f = te.Feats!.FirstOrDefault(x => x.Hash == StorageData.StorageHash);
                         if (f == null) continue;
@@ -129,6 +176,7 @@ public static class WorldIndexer
                 lock (idx) idx.DoneCount++;
             });
             idx.Stats = stats.OrderBy(s => s.Cz).ThenBy(s => s.Cx).ToList();
+            idx.Objects = objs.OrderBy(o => o.Kind).ThenBy(o => o.X).ThenBy(o => o.Z).ToList();
             idx.Containers = conts.OrderBy(c => c.X).ThenBy(c => c.Z).ThenBy(c => c.Y).ToList();
             idx.Entities = ents.Select(e => (e.Item1, e.Item2, e.Item3, e.Item4)).ToList();
             idx.TeBlocks = teBlocks.ToDictionary(kv => kv.Key, kv => kv.Value);
