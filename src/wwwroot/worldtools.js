@@ -58,7 +58,7 @@
     const st = await api('/api/world/stats');
     el.append(h('div', { class: 'cards' },
       h('div', { class: 'stat' }, h('b', {}, fmtN(st.chunks)), h('span', {}, 'chunks in ' + st.regions + ' regions')),
-      h('div', { class: 'stat' }, h('b', {}, fmtN(st.solid)), h('span', {}, 'blocks placed')),
+      h('div', { class: 'stat' }, h('b', {}, fmtN(st.solid)), h('span', {}, 'blocks')),
       h('div', { class: 'stat' }, h('b', {}, fmtN(st.containers)), h('span', {}, 'storage containers (' + fmtN(st.containersWithItems) + ' with items)')),
       h('div', { class: 'stat' }, h('b', {}, fmtN(st.tileEntities)), h('span', {}, 'tile entities')),
       h('div', { class: 'stat' }, h('b', {}, fmtN(st.entities)), h('span', {}, 'zombies / animals / loot bags in chunks'))));
@@ -73,7 +73,7 @@
     el.append(h('h2', {}, 'Find anything'), h('div', { class: 'row' }, 'Find', kind, q, h('button', { class: 'primary', onclick: go }, 'Search'), h('button', { onclick: () => guarded(async () => { out.replaceChildren(); await heatCard(out, kind.value, q.value); }) }, '🌡 Show as heat map')), out);
 
     // heat map shortcuts
-    el.append(h('h2', {}, 'Heat maps'), h('div', { class: 'row' }, [['solid', 'Where players built / terrain mass'], ['container', 'Containers'], ['tileentity', 'Tile entities'], ['entity', 'Creatures']].map(([k, l]) => h('button', { onclick: () => guarded(async () => { out.replaceChildren(); await heatCard(out, k, ''); out.scrollIntoView(); }) }, l))));
+    el.append(h('h2', {}, 'Heat maps'), h('div', { class: 'row' }, [['solid', 'Where players built / terrain mass'], ['container', 'Containers'], ['tileentity', 'Tile entities'], ['entity', 'Creatures'], ['tree', 'Trees (tree farms = hot spots)'], ['plantedtree', 'Planted trees (player tree farms)']].map(([k, l]) => h('button', { onclick: () => guarded(async () => { out.replaceChildren(); await heatCard(out, k, ''); out.scrollIntoView(); }) }, l))));
 
     // tops
     const tbl = (rows, cols) => h('table', {}, h('tr', {}, cols.map(c => h('th', {}, c[0]))), rows.map(r => h('tr', {}, cols.map(c => h('td', {}, c[1](r))))));
@@ -126,7 +126,7 @@
     const tip = h('div', { class: 'mono muted', style: 'min-height:20px' }, 'hover the map');
     cv.onmousemove = e => { const b = cv.getBoundingClientRect(); const cx = r.minCx + Math.floor((e.clientX - b.left) / b.width * w), cz = r.minCz + Math.floor((e.clientY - b.top) / b.height * hh); const v = val.get(cx + ',' + cz); tip.textContent = `chunk ${cx}, ${cz}  ·  blocks x ${cx * 16}…${cx * 16 + 15}, z ${cz * 16}…${cz * 16 + 15}  ·  ${v == null ? 'nothing' : fmtN(v)}`; };
     cv.onclick = e => { const b = cv.getBoundingClientRect(); const cx = r.minCx + Math.floor((e.clientX - b.left) / b.width * w), cz = r.minCz + Math.floor((e.clientY - b.top) / b.height * hh); guarded(() => WT.gotoBlock(cx * 16 + 8, cz * 16 + 8)); };
-    out.append(h('h3', {}, `Heat map: ${{ solid: 'blocks per chunk', block: 'matching blocks', container: 'containers', tileentity: 'tile entities', entity: 'creatures', item: 'matching items in containers' }[kind]}${q ? ' "' + q + '"' : ''}`),
+    out.append(h('h3', {}, `Heat map: ${{ solid: 'blocks per chunk', block: 'matching blocks', container: 'containers', tileentity: 'tile entities', entity: 'creatures', tree: 'tree blocks per chunk', plantedtree: 'player-planted tree blocks per chunk', item: 'matching items in containers' }[kind]}${q ? ' "' + q + '"' : ''}`),
       h('div', { class: 'muted' }, `${fmtN(r.total)} in total · strongest chunk ${fmtN(r.max)} · logarithmic colour scale (blue = few, red = many) · click a chunk to open its region`), tip, cv);
   }
 

@@ -56,6 +56,7 @@ public static class Registry
         new WorldStateHandler(),
         new NameIdMapHandler(),
         new SimpleDatHandler(),
+        new GameOptionsHandler(),
         new DecoHandler(),
         new MultiBlockHandler(),
         new MapRegionHandler(),

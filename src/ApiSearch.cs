@@ -128,6 +128,14 @@ public static partial class Api
             throw new InvalidOperationException("Unknown search kind " + kind);
         });
 
+        // trees are blocks whose name starts with "tree" – minus grass, shrubs, cactus, stumps and the random-helper markers
+        static bool IsTree(string name, bool plantedOnly)
+        {
+            if (!name.StartsWith("tree", StringComparison.OrdinalIgnoreCase)) return false;
+            if (System.Text.RegularExpressions.Regex.IsMatch(name, "Grass|Shrub|Cactus|Helper|Stump|Plant0|Azalea|Bush|Master", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) return false;
+            return !plantedOnly || name.StartsWith("treePlanted", StringComparison.OrdinalIgnoreCase);
+        }
+
         // heat map cells per chunk
         app.MapGet("/api/world/heat", (HttpContext http) =>
         {
@@ -160,6 +168,14 @@ public static partial class Api
                 case "tileentity":
                     foreach (var s in ix.Stats) if (s.TileEntities > 0) cells[(s.Cx, s.Cz)] = s.TileEntities;
                     break;
+                case "tree":            // every tree block (natural forests light up, tree farms stand out as hot single chunks)
+                case "plantedtree":     // only trees grown from player-planted saplings (treePlanted…)
+                    {
+                        bool planted = kind == "plantedtree";
+                        var ids = g.BlockNames.Where(kv => IsTree(kv.Value, planted) && Hit(kv.Value)).Select(kv => kv.Key).ToHashSet();
+                        foreach (var s in ix.Stats) { long n = 0; for (int i = 0; i < s.Types.Length; i++) if (ids.Contains(s.Types[i])) n += s.Counts[i]; if (n > 0) cells[(s.Cx, s.Cz)] = n; }
+                        break;
+                    }
                 default: throw new InvalidOperationException("Unknown heat map kind " + kind);
             }
             var minCx = ix.Stats.Count == 0 ? 0 : ix.Stats.Min(s => s.Cx); var maxCx = ix.Stats.Count == 0 ? 0 : ix.Stats.Max(s => s.Cx);

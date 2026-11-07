@@ -51,7 +51,7 @@ public static partial class Api
             var list = new List<object>();
             foreach (var f in c.ListFilesRel().Where(r => r.StartsWith("Player/", StringComparison.OrdinalIgnoreCase) && r.EndsWith(".ttp", StringComparison.OrdinalIgnoreCase)))
             {
-                try { var p = PlayerFile.Parse(c.ReadAll(f), g); list.Add(new { name = p.Ecd.EntityName, file = f, x = (int)Math.Floor(p.Ecd.PosX), y = (int)Math.Floor(p.Ecd.PosY), z = (int)Math.Floor(p.Ecd.PosZ) }); }
+                try { var p = PlayerFile.Parse(c.ReadAll(f), g); var stem = Path.GetFileNameWithoutExtension(f); int us = stem.IndexOf('_'); list.Add(new { name = p.Ecd.EntityName, userId = us > 0 ? stem.Substring(us + 1) : stem, file = f, x = (int)Math.Floor(p.Ecd.PosX), y = (int)Math.Floor(p.Ecd.PosY), z = (int)Math.Floor(p.Ecd.PosZ) }); }
                 catch { }
             }
             return J(list);

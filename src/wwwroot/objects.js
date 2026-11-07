@@ -38,11 +38,27 @@
   }
   WT.stackTable = stackTable;
 
+  // player names for user ids (players.xml and the player files), so owners / authors show a name instead of an EOS id
+  let namesCache = null, namesAt = 0;
+  WT.playerNames = async () => {
+    if (namesCache && Date.now() - namesAt < 30000) return namesCache;
+    const m = {};
+    try { const r = await api('/api/players/list'); for (const p of r.players || []) { if (p.name) { if (p.userId) m[p.userId.toLowerCase()] = p.name; if (p.nativeUserId) m[p.nativeUserId.toLowerCase()] ||= p.name; } } } catch { }
+    try { const r = await api('/api/world/players'); for (const p of r || []) if (p.name && p.userId) m[p.userId.toLowerCase()] ||= p.name; } catch { }
+    namesCache = m; namesAt = Date.now(); return m;
+  };
+  /** A small label that shows the player name for a user id (filled in asynchronously). */
+  WT.nameLabel = (id, o = {}) => {
+    const s = h('span', { class: 'muted', style: 'align-self:center' }, '');
+    s.set = async v => { if (!v) { s.textContent = ''; return; } const m = await WT.playerNames(); const n = m[String(v).toLowerCase()]; s.textContent = o.plain ? (n || String(v).slice(0, 14) + '…') : n ? '→ ' + n : o.quiet ? '' : '→ unknown player'; s.style.color = n ? 'var(--ok, #4caf50)' : ''; };
+    s.set(id); return s;
+  };
   const plat = (obj, key) => {
     const o = obj[key] || { platform: 'EOS', userId: '' };
+    const nm = WT.nameLabel(o.userId);
     return h('span', { style: 'display:inline-flex;gap:4px' },
       h('input', { type: 'text', value: o.platform, style: 'width:60px', placeholder: 'EOS', onchange: e => { o.platform = e.target.value; obj[key] = o.userId || o.platform ? o : null; } }),
-      h('input', { type: 'text', value: o.userId, style: 'width:260px', placeholder: 'user id (empty = nobody)', onchange: e => { o.userId = e.target.value; obj[key] = o.userId ? { flag: 1, ...o } : null; } }));
+      h('input', { type: 'text', value: o.userId, style: 'width:260px', placeholder: 'user id (empty = nobody)', onchange: e => { o.userId = e.target.value; obj[key] = o.userId ? { flag: 1, ...o } : null; nm.set(o.userId); } }), nm);
   };
 
   // ───────── trader / vending stock editor
@@ -115,11 +131,11 @@
           else if (f.kind === 'door' && d) sec.append(h('div', {}, chk(d, 'isOpen', 'Door is open')));
           else if (f.kind === 'landclaim' && d) sec.append(h('div', {}, chk(d, 'showBounds', 'Show claim bounds')));
           else if (f.kind === 'lockable' && d) {
-            const pw = h('input', { type: 'text', placeholder: 'new password', style: 'width:150px' }); const verdict = h('span', { class: 'muted' }, '');
+            const pw = h('input', { type: 'text', placeholder: 'new password', style: 'width:150px' });
             sec.append(h('div', { class: 'row' }, chk(d, 'locked', 'Locked'), fld('Stored password hash (empty = no password)', txt(d, 'passwordHash', { style: 'width:130px' })), h('button', { class: 'small', onclick: () => { d.locked = false; d.passwordHash = ''; d.allowed = []; render(); } }, 'Clear lock & password')),
-              h('div', { class: 'row' }, h('span', { class: 'muted' }, 'The game keeps only a 32-bit hash of the password, not the password. Type one to set it or to check a guess:'), pw,
+              h('div', { class: 'row' }, h('span', { class: 'muted' }, 'The game keeps only a 32-bit hash of the password, not the password itself. Type a new one to replace it:'), pw,
                 h('button', { class: 'small', onclick: () => { if (!pw.value) return; d.passwordHash = WT.passwordHash(pw.value); d.locked = true; render(); } }, 'Set this password'),
-                h('button', { class: 'small', onclick: () => { verdict.textContent = !d.passwordHash ? 'no password is set' : WT.passwordHash(pw.value) === d.passwordHash ? '✓ matches' : '✗ does not match'; verdict.className = verdict.textContent[0] === '✓' ? 'ok' : 'muted'; } }, 'Check guess'), verdict));
+                ));
             const al = h('div', {}); (d.allowed || []).forEach((a, i) => al.append(h('div', { class: 'row' }, plat(d.allowed, i), h('button', { class: 'small danger', onclick: () => { d.allowed.splice(i, 1); render(); } }, '✕'))));
             sec.append(h('div', { class: 'muted' }, 'Allowed users:'), al, h('button', { class: 'small', onclick: () => { (d.allowed ||= []).push({ flag: 1, platform: 'EOS', userId: '' }); render(); } }, '+ add user'));
           }
@@ -242,7 +258,7 @@
       if (!r.results.length) { out.append(h('div', { class: 'card muted' }, 'Nothing of this kind in the world' + (st.q ? ' matches the filter.' : '.'))); return; }
       out.append(h('table', {}, h('tr', {}, ['Name', 'Details', 'Position', 'Owner', ''].map(x => h('th', {}, x))), r.results.map(o => {
         const entity = o.index >= 0;
-        return h('tr', {}, h('td', {}, o.name), h('td', { style: 'max-width:420px;overflow:hidden;text-overflow:ellipsis' }, o.detail, o.flag ? h('span', { class: 'warn' }, entity ? '  (read-only)' : '') : ''), h('td', {}, WT.posLink(o.x, o.y, o.z)), h('td', { class: 'muted mono' }, o.owner ? o.owner.slice(0, 12) + '…' : ''),
+        return h('tr', {}, h('td', {}, o.name), h('td', { style: 'max-width:420px;overflow:hidden;text-overflow:ellipsis' }, o.detail, o.flag ? h('span', { class: 'warn' }, entity ? '  (read-only)' : '') : ''), h('td', {}, WT.posLink(o.x, o.y, o.z)), h('td', { class: 'muted', title: o.owner || '' }, o.owner ? WT.nameLabel(o.owner, { plain: true }) : ''),
           h('td', {}, h('button', { class: 'small', onclick: () => guarded(() => entity ? openEntity(o.cx, o.cz, o.index) : inspect(o.x, o.y, o.z)) }, 'Open / edit')));
       })), r.results.length >= 1000 ? h('div', { class: 'muted' }, 'First 1000 shown – use the filter.') : null);
     }

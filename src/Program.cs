@@ -147,7 +147,12 @@ public static class Server
             return Results.Content(html, "text/html; charset=utf-8");
         });
 
-        foreach (var script in new[] { "viewer3d.js", "worldtools.js", "schematics.js", "trim.js", "history.js", "players.js", "kits.js", "objects.js" })
+        app.MapGet("/gameoptions.json", (HttpContext c) =>
+        {
+            c.Response.Headers.CacheControl = "no-store";
+            return Results.Content(ReadEmbedded("wwwroot/gameoptions.json"), "application/json; charset=utf-8");
+        });
+        foreach (var script in new[] { "viewer3d.js", "worldtools.js", "schematics.js", "trim.js", "history.js", "players.js", "kits.js", "objects.js", "gameoptions.js" })
             app.MapGet("/" + script, (HttpContext c) =>
             {
                 c.Response.Headers.CacheControl = "no-store";

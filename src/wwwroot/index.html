@@ -148,12 +148,18 @@ canvas.rg{image-rendering:pixelated;border:1px solid var(--line);border-radius:6
 <script src="/players.js"></script>
 <script src="/kits.js"></script>
 <script src="/objects.js"></script>
+<script src="/gameoptions.js"></script>
 <script>
 'use strict';
 const TOKEN = '__TOKEN__';
 const $ = (s, el = document) => el.querySelector(s);
 
 /* ───────────────────────── helpers ───────────────────────── */
+// DOM append()/prepend()/replaceChildren() print null, undefined and false as text ("null") – drop them instead
+for (const fn of ['append', 'prepend', 'replaceChildren']) {
+  const orig = Element.prototype[fn];
+  Element.prototype[fn] = function (...nodes) { return orig.apply(this, nodes.filter(n => n != null && n !== false)); };
+}
 function h(tag, attrs, ...kids) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -534,7 +540,7 @@ async function tabEditor(el, a) {
   }
   const body = h('div', {});
   el.append(body);
-  const ed = { player: playerEditor, world: worldEditor, nim: nimEditor, dat: datEditor, multiblock: multiEditor }[kind];
+  const ed = { player: playerEditor, world: worldEditor, nim: nimEditor, dat: datEditor, multiblock: multiEditor, gameoptions: (el, M, a) => WT.gameOptionsEditor(el, M, a) }[kind];
   if (!ed) { body.append(h('div', { class: 'muted' }, 'No structured editor for this kind – use Hex.')); return; }
   ed(body, S.model, a);
   el.append(h('div', { class: 'savebar' }, h('button', { id: 'savebtn', class: 'primary', disabled: !S.dirty, onclick: () => saveModel(a) }, 'Save changes'),
@@ -769,9 +775,10 @@ function entitiesEditor(el, M) {
     card.append(h('div', { class: 'row' }, field('X', numInput(e, 'posX')), field('Y', numInput(e, 'posY')), field('Z', numInput(e, 'posZ')), field('Rotation Y', numInput(e, 'rotY')), field('On ground', checkInput(e, 'onGround')), field('Entity id', numInput(e, 'id', { step: 1 }))));
     if (e.stats && e.stats.health) card.append(h('div', { class: 'row' }, field('Health', numInput(e.stats.health, 'value')), field('Max health', numInput(e.stats.health, 'baseMax')),
       h('button', { class: 'small', onclick: () => { e.stats.health.value = e.stats.health.baseMax; markDirty(); renderMain(); } }, 'Repair fully')));
+    const nm1 = WT.nameLabel(d && d.owner ? d.owner.userId : '');
     if (d && isVeh) {
       card.append(h('div', { class: 'row' },
-        field('Owner (user id)', h('input', { type: 'text', value: d.owner ? d.owner.userId : '', style: 'width:300px', onchange: ev => { if (!d.owner) d.owner = { flag: 1, platform: 'EOS', userId: '' }; d.owner.userId = ev.target.value; markDirty(); } })),
+        field('Owner (user id)', h('input', { type: 'text', value: d.owner ? d.owner.userId : '', style: 'width:300px', onchange: ev => { if (!d.owner) d.owner = { flag: 1, platform: 'EOS', userId: '' }; d.owner.userId = ev.target.value; markDirty(); nm1.set(d.owner.userId); } }), nm1),
         field('Platform', h('input', { type: 'text', value: d.owner ? d.owner.platform : '', style: 'width:90px', onchange: ev => { if (!d.owner) d.owner = { flag: 1, platform: 'EOS', userId: '' }; d.owner.platform = ev.target.value; markDirty(); } })),
         field('Locked', checkInput(d, 'locked')), field('Interaction locked', checkInput(d, 'interactionLocked')), field('Headlight', checkInput(d, 'headlight')),
         field('Password hash', textInput(d, 'passwordHash')),
@@ -780,8 +787,8 @@ function entitiesEditor(el, M) {
       if (d.bag) card.append(h('h3', {}, 'Storage (' + d.bag.items.length + ' slots)'), slotTable(M, d.bag.items));
       card.append(h('div', { class: 'muted', style: 'font-size:12px' }, 'Allowed users: ' + (d.allowedUsers.length ? d.allowedUsers.map(u => u && u.userId).join(', ') : 'none')));
     } else if (d && !isVeh) {
-      const ownerBox = (o, set) => h('input', { type: 'text', value: o ? o.userId : '', style: 'width:300px', onchange: ev => { const v = o || set(); v.userId = ev.target.value; markDirty(); } });
-      card.append(h('div', { class: 'row' }, field('Owner (user id)', ownerBox(d.owner, () => (d.owner = { flag: 1, platform: 'EOS', userId: '' }))),
+      const ownerBox = (o, set) => h('input', { type: 'text', value: o ? o.userId : '', style: 'width:300px', onchange: ev => { const v = o || set(); v.userId = ev.target.value; markDirty(); nm1.set(v.userId); } });
+      card.append(h('div', { class: 'row' }, field('Owner (user id)', ownerBox(d.owner, () => (d.owner = { flag: 1, platform: 'EOS', userId: '' })), nm1),
         d.item && d.item.type ? field('Drone item', h('span', { style: 'padding:4px 0' }, (M.names && M.names[d.item.type]) || '#' + d.item.type)) : null,
         field('Order state', numInput(e, 'orderState', { step: 1 }))));
       if (d.parsed) {
@@ -913,7 +920,7 @@ function pInventory(el, P, M) {
     el.append(h('h2', {}, 'Toolbelt (' + P.inventory.grid.items.length + ' slots) – selected slot ' + (P.inventory.selectedSlot + 1)), slotTable(M, P.inventory.grid.items));
     el.append(h('h2', {}, 'Backpack (' + P.bag.grid.items.length + ' slots)'), slotTable(M, P.bag.grid.items));
     el.append(h('h2', {}, 'Equipment'), slotTable(M, P.equipment.grid.items, { labels: EQUIP_NAMES }));
-    if (P.dragAndDrop.length) el.append(h('h2', {}, 'Item held by the cursor'), slotTable(M, P.dragAndDrop));
+    heldItem(el, M, P);
     return;
   }
   const O = { lookup };
@@ -939,7 +946,12 @@ function pInventory(el, P, M) {
   left.style.cssText = 'flex:1 1 300px;min-width:0';
   side.style.cssText = 'flex:1 1 280px;min-width:0;align-self:flex-start';
   el.append(h('div', { style: 'display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start' }, left, side));
-  if (P.dragAndDrop.length) el.append(h('h2', {}, 'Item held by the cursor'), slotTable(M, P.dragAndDrop));
+  heldItem(el, M, P);
+}
+/** The stack the player had picked up with the mouse in an open inventory window when the game saved. */
+function heldItem(el, M, P) {
+  if (!P.dragAndDrop || !P.dragAndDrop.some(s => s.count > 0)) return;
+  el.append(h('h2', {}, 'Item being dragged (picked up with the mouse)'), h('div', { class: 'muted' }, 'The player had this stack on the mouse pointer, mid-drag in the inventory window, when the game saved or exited. It is in none of the slots above; the game puts it back when the inventory is opened. Empty it to discard the stack.'), slotTable(M, P.dragAndDrop));
 }
 function pSkills(el, P) {
   const K = P.skills;
