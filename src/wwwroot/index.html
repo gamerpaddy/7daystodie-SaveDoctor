@@ -1013,8 +1013,13 @@ async function regionEditor(el, a) {
   const CELL = S.regionCell || 22; const W = 32 * CELL;
   const cv = h('canvas', { class: 'rg', width: W, height: W, style: `width:${W}px` });
   const side = h('div', { style: 'flex:1;min-width:300px' });
-  const sel = { slot: null, cell: null, marker: null };
+  const sel = { slot: null, cell: null, marker: null, block: null };
   let terrain = null, markers = [], explored = {}, elsewhere = [], fogPlayer = null;
+  // zoom / pan: map coordinates (0…W, the unzoomed picture) are shown through zoom + pan
+  const V = { z: 1, x: 0, y: 0 }; let hoverBlock = null;
+  const PXB = () => W / 512 * V.z;                         // screen pixels per block
+  const clampV = () => { V.z = Math.max(1, Math.min(48, V.z)); const span = W / V.z; V.x = Math.max(0, Math.min(W - span, V.x)); V.y = Math.max(0, Math.min(W - span, V.y)); };
+  const scr = (mx, my) => [(mx - V.x) * V.z, (my - V.y) * V.z];
   const ICON = { player: ['🧍', '#4da3ff', 20, 'Players'], vehicle: ['🚗', '#ff9f1c', 18, 'Vehicles'], drone: ['🛸', '#c77dff', 16, 'Drones'], waypoint: ['📍', '#ff5d8f', 15, 'Waypoints'], spawn: ['🏠', '#2ec4b6', 15, 'Spawn / respawn'], marker: ['📌', '#ffd166', 14, 'Map markers'],
     power: ['⚡', '#ffd60a', 12, 'Power blocks'], claim: ['🚩', '#ef476f', 16, 'Land claims'], bed: ['🛏', '#06d6a0', 15, 'Bedrolls'], backpack: ['🎒', '#cdb4db', 14, 'Dropped backpacks'], vending: ['🏪', '#90be6d', 15, 'Vending machines'],
     container: ['📦', '#d4a373', 11, 'Containers / workstations'], zombie: ['🧟', '#e63946', 12, 'Zombies'], animal: ['🐾', '#9b8f70', 11, 'Animals'], drop: ['💎', '#a8dadc', 10, 'Dropped items'], entity: ['•', '#999', 10, 'Other entities'] };
@@ -1023,54 +1028,102 @@ async function regionEditor(el, a) {
   const cellRect = s => { const c = s.chunkX - rx * 32, r = s.chunkZ - rz * 32; return [c * CELL, (31 - r) * CELL]; };
   function draw() {
     const g = cv.getContext('2d'); const css = getComputedStyle(document.documentElement);
-    g.fillStyle = '#14181f'; g.fillRect(0, 0, W, W);
+    g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#14181f'; g.fillRect(0, 0, W, W);
+    g.save(); g.setTransform(V.z, 0, 0, V.z, -V.x * V.z, -V.y * V.z); const lw = v => v / V.z;
     if (L.terrain && terrain && terrain.complete) { g.imageSmoothingEnabled = false; g.drawImage(terrain, 0, 0, W, W); }
     else for (const s of info.slots) { const [x, y] = cellRect(s); g.fillStyle = '#2b6a3a'; g.fillRect(x + 1, y + 1, CELL - 2, CELL - 2); }
     const fog = L.fog && fogPlayer && explored[fogPlayer];
     for (const s of info.slots) {
       const [x, y] = cellRect(s);
       if (fog && !explored[fogPlayer][(s.chunkZ - rz * 32) * 32 + (s.chunkX - rx * 32)]) { g.fillStyle = 'rgba(8,10,14,.62)'; g.fillRect(x, y, CELL, CELL); }
-      if (L.status && s.status === 'bad') { g.fillStyle = 'rgba(240,82,79,.5)'; g.fillRect(x, y, CELL, CELL); g.strokeStyle = '#f0524f'; g.lineWidth = 2; g.strokeRect(x + 1, y + 1, CELL - 2, CELL - 2); }
-      else if (L.status && s.status === 'warn') { g.strokeStyle = '#e3a008'; g.lineWidth = 2; g.strokeRect(x + 1, y + 1, CELL - 2, CELL - 2); }
+      if (L.status && s.status === 'bad') { g.fillStyle = 'rgba(240,82,79,.5)'; g.fillRect(x, y, CELL, CELL); g.strokeStyle = '#f0524f'; g.lineWidth = lw(2); g.strokeRect(x + lw(1), y + lw(1), CELL - lw(2), CELL - lw(2)); }
+      else if (L.status && s.status === 'warn') { g.strokeStyle = '#e3a008'; g.lineWidth = lw(2); g.strokeRect(x + lw(1), y + lw(1), CELL - lw(2), CELL - lw(2)); }
     }
-    if (L.grid) { g.strokeStyle = 'rgba(255,255,255,.09)'; g.lineWidth = 1; g.beginPath(); for (let i = 0; i <= 32; i++) { g.moveTo(i * CELL + .5, 0); g.lineTo(i * CELL + .5, W); g.moveTo(0, i * CELL + .5); g.lineTo(W, i * CELL + .5); } g.stroke(); }
-    if (sel.cell) { const [c, r] = sel.cell; g.strokeStyle = '#fff'; g.lineWidth = 2; g.strokeRect(c * CELL + 1, (31 - r) * CELL + 1, CELL - 2, CELL - 2); }
+    if (L.grid) { g.strokeStyle = 'rgba(255,255,255,.09)'; g.lineWidth = lw(1); g.beginPath(); for (let i = 0; i <= 32; i++) { g.moveTo(i * CELL, 0); g.lineTo(i * CELL, W); g.moveTo(0, i * CELL); g.lineTo(W, i * CELL); } g.stroke(); }
+    const BS = W / 512;                                       // map size of one block
+    if (PXB() >= 6) {                                         // block grid while zoomed in far enough to pick single blocks
+      g.strokeStyle = 'rgba(255,255,255,.16)'; g.lineWidth = lw(1); g.beginPath();
+      const x0 = Math.max(0, Math.floor(V.x / BS)), x1 = Math.min(512, Math.ceil((V.x + W / V.z) / BS)), y0 = Math.max(0, Math.floor(V.y / BS)), y1 = Math.min(512, Math.ceil((V.y + W / V.z) / BS));
+      for (let i = x0; i <= x1; i++) { g.moveTo(i * BS, y0 * BS); g.lineTo(i * BS, y1 * BS); } for (let j = y0; j <= y1; j++) { g.moveTo(x0 * BS, j * BS); g.lineTo(x1 * BS, j * BS); } g.stroke();
+      const box = (b, col, w) => { if (!b) return; const bx = (b.x - rx * 512) * BS, by = W - (b.z - rz * 512 + 1) * BS; g.strokeStyle = col; g.lineWidth = lw(w); g.strokeRect(bx, by, BS, BS); };
+      box(hoverBlock, 'rgba(255,255,255,.8)', 1.5); box(sel.block, '#ffd60a', 2.5);
+    }
+    if (sel.cell && !sel.block) { const [c, r] = sel.cell; g.strokeStyle = '#fff'; g.lineWidth = lw(2); g.strokeRect(c * CELL + lw(1), (31 - r) * CELL + lw(1), CELL - lw(2), CELL - lw(2)); }
+    g.restore(); g.setTransform(1, 0, 0, 1, 0, 0);
     // markers: low priority first so players end up on top
     const order = ['entity', 'zombie', 'animal', 'drop', 'container', 'power', 'backpack', 'vending', 'bed', 'claim', 'waypoint', 'marker', 'spawn', 'drone', 'vehicle', 'player'];
     g.textAlign = 'center'; g.textBaseline = 'middle';
     for (const t of order) for (const m of markers) {
       if (m.type !== t || !L[t]) continue;
-      const [em, col, sz] = ICON[t]; const x = px(m), y = py(m);
+      const [em, col, sz] = ICON[t]; const [x, y] = scr(px(m), py(m)); if (x < -20 || y < -20 || x > W + 20 || y > W + 20) continue;
       g.beginPath(); g.arc(x, y, sz * 0.62, 0, 7); g.fillStyle = 'rgba(10,12,16,.72)'; g.fill(); g.lineWidth = sel.marker === m ? 3 : 1.5; g.strokeStyle = sel.marker === m ? '#fff' : col; g.stroke();
       g.font = `${sz}px "Segoe UI Emoji","Apple Color Emoji",sans-serif`; g.fillStyle = col; g.fillText(em, x, y + 1);
       if (t === 'player' || t === 'vehicle') { g.font = 'bold 12px system-ui,sans-serif'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.85)'; g.strokeText(m.label, x, y - sz); g.fillStyle = '#fff'; g.fillText(m.label, x, y - sz); }
     }
   }
-  const cellAt = e => { const r = cv.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / (r.width / 32)), 31 - Math.floor((e.clientY - r.top) / (r.height / 32))]; };
+  const mapPt = e => { const r = cv.getBoundingClientRect(); const k = W / r.width; return [V.x + (e.clientX - r.left) * k / V.z, V.y + (e.clientY - r.top) * k / V.z]; };
+  const cellAt = e => { const [mx, my] = mapPt(e); return [Math.max(0, Math.min(31, Math.floor(mx / CELL))), 31 - Math.max(0, Math.min(31, Math.floor(my / CELL)))]; };
+  const blockAt = e => { const [mx, my] = mapPt(e); return { x: rx * 512 + Math.floor(mx / W * 512), z: rz * 512 + Math.floor((W - my) / W * 512) }; };
   const markerAt = e => {
-    const r = cv.getBoundingClientRect(); const k = W / r.width; const mx = (e.clientX - r.left) * k, my = (e.clientY - r.top) * k; let best = null, bd = 13 * 13;
-    for (const m of visibleMarkers()) { const d = (px(m) - mx) ** 2 + (py(m) - my) ** 2; if (d < bd) { bd = d; best = m; } }
+    const r = cv.getBoundingClientRect(); const k = W / r.width; const sx = (e.clientX - r.left) * k, sy = (e.clientY - r.top) * k; let best = null, bd = 13 * 13;
+    for (const m of visibleMarkers()) { const [x, y] = scr(px(m), py(m)); const d = (x - sx) ** 2 + (y - sy) ** 2; if (d < bd) { bd = d; best = m; } }
     return best;
   };
   const mTitle = m => `${ICON[m.type][0]} ${m.label}${m.detail ? '\n' + m.detail : ''}\nx ${Math.round(m.x)}  y ${Math.round(m.y)}  z ${Math.round(m.z)}`;
+  let dragMoved = false;
   cv.onclick = e => {
+    if (dragMoved) { dragMoved = false; return; }
     const m = markerAt(e);
-    if (m) { sel.marker = m; sel.cell = null; draw(); showMarker(m); return; }
-    const [c, r] = cellAt(e); sel.marker = null; sel.cell = [c, r]; const s = byCell.get(cellKey(c, r)); sel.slot = s ? s.index : null; draw();
+    if (m) { sel.marker = m; sel.cell = null; sel.block = null; draw(); showMarker(m); return; }
+    const [c, r] = cellAt(e); sel.marker = null; sel.cell = [c, r]; const s = byCell.get(cellKey(c, r)); sel.slot = s ? s.index : null;
+    if (PXB() >= 6) { sel.block = blockAt(e); draw(); showBlock(sel.block, s); return; }
+    sel.block = null; draw();
     if (s) showSlot(s.index); else showEmpty(c + rx * 32, r + rz * 32);
   };
+  // wheel = zoom around the pointer, drag = pan
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    const [mx, my] = mapPt(e); const f = Math.exp(-e.deltaY * 0.0016); const nz = Math.max(1, Math.min(48, V.z * f)); const k = nz / V.z;
+    const r = cv.getBoundingClientRect(); const kk = W / r.width; const sx = (e.clientX - r.left) * kk, sy = (e.clientY - r.top) * kk;
+    V.z = nz; V.x = mx - sx / V.z; V.y = my - sy / V.z; clampV(); updateZoomLabel(); draw();
+  }, { passive: false });
+  let drag = null;
+  cv.addEventListener('mousedown', e => { if (e.button !== 0 && e.button !== 1) return; drag = { sx: e.clientX, sy: e.clientY, vx: V.x, vy: V.y, moved: false }; if (e.button === 1) e.preventDefault(); });
+  window.addEventListener('mouseup', () => { if (drag && drag.moved) dragMoved = true; drag = null; cv.style.cursor = ''; });
+  window.addEventListener('mousemove', e => {
+    if (!drag || !cv.isConnected) return;
+    const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 5) return;
+    drag.moved = true; cv.style.cursor = 'grabbing';
+    const r = cv.getBoundingClientRect(); const k = W / r.width;
+    V.x = drag.vx - dx * k / V.z; V.y = drag.vy - dy * k / V.z; clampV(); draw();
+  });
+  function zoomBy(f) { const cx = V.x + W / V.z / 2, cy = V.y + W / V.z / 2; V.z = Math.max(1, Math.min(48, V.z * f)); V.x = cx - W / V.z / 2; V.y = cy - W / V.z / 2; clampV(); updateZoomLabel(); draw(); }
+  function zoomToBlock(b, z) { V.z = z; V.x = (b.x - rx * 512 + 0.5) / 512 * W - W / V.z / 2; V.y = W - (b.z - rz * 512 + 0.5) / 512 * W - W / V.z / 2; clampV(); updateZoomLabel(); draw(); }
   cv.onmousemove = e => {
+    if (drag && drag.moved) return;
+    if (PXB() >= 6) { const b = blockAt(e); if (!hoverBlock || hoverBlock.x !== b.x || hoverBlock.z !== b.z) { hoverBlock = b; draw(); } }
+    else if (hoverBlock) { hoverBlock = null; draw(); }
     const m = markerAt(e); if (m) { cv.title = mTitle(m); return; }
+    if (PXB() >= 6) { cv.title = `block x ${hoverBlock.x}, z ${hoverBlock.z} – click to pick it`; return; }
     const [c, r] = cellAt(e); const s = byCell.get(cellKey(c, r));
     cv.title = s ? `chunk (${s.chunkX}, ${s.chunkZ}) – ${s.status}${s.message ? ': ' + s.message : ''}\nblocks x ${s.chunkX * 16}…${s.chunkX * 16 + 15}, z ${s.chunkZ * 16}…${s.chunkZ * 16 + 15}\n${markers.filter(k => L[k.type] && Math.floor(k.x / 16) === s.chunkX && Math.floor(k.z / 16) === s.chunkZ).length} marker(s) here` : 'no chunk stored here';
   };
+  async function showBlock(b, s) {
+    const head = h('h2', { style: 'margin-top:0' }, `Block ${b.x}, ${b.z}`);
+    side.replaceChildren(head, h('div', { class: 'muted' }, 'loading…'));
+    if (!s || s.status === 'bad') { side.replaceChildren(head, h('div', { class: 'muted' }, s ? 'This chunk is damaged.' : 'No chunk is stored here.')); return; }
+    let el; try { el = await WT.columnPanel(b.x, b.z, { extra: [h('button', { onclick: () => open3D({ rel: a.rel, slots: info.slots, centerSlot: s.index, ro }) }, '🧊 3D view')] }); } catch (er) { side.replaceChildren(head, h('div', { class: 'err' }, er.message)); return; }
+    if (!sel.block || sel.block.x !== b.x || sel.block.z !== b.z) return;       // another block was picked meanwhile
+    side.replaceChildren(head, el);
+  }
   function showEmpty(cx, cz) {
     side.replaceChildren(h('h2', { style: 'margin-top:0' }, `Chunk (${cx}, ${cz}) – empty`), h('div', { class: 'muted' }, 'No chunk is stored here (never generated / explored).'),
       ro ? null : h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { onclick: () => importChunk(slotIndexOf(cx, cz)) }, '⬆ Import chunk file…')));
   }
   function showMarker(m) {
     const s = byCell.get(cellKey(Math.floor(m.x / 16) - rx * 32, Math.floor(m.z / 16) - rz * 32));
-    side.replaceChildren(h('h2', { style: 'margin-top:0' }, ICON[m.type][0] + ' ' + m.label), m.detail ? h('div', { class: 'muted' }, m.detail) : null,
+    side.replaceChildren(h('h2', { style: 'margin-top:0' }, ICON[m.type][0] + ' ' + m.label), m.detail ? h('div', { class: 'muted' }, m.detail) : '',
       h('div', { class: 'mono', style: 'margin:6px 0' }, `x ${m.x.toFixed(1)}  y ${m.y.toFixed(1)}  z ${m.z.toFixed(1)}`, h('div', { class: 'muted' }, `chunk (${Math.floor(m.x / 16)}, ${Math.floor(m.z / 16)})`)),
       h('div', { class: 'row' }, m.file && S.files.some(f => f.rel === m.file) ? h('button', { onclick: () => selectFile(m.file) }, 'Open ' + m.file.split('/').pop()) : null,
         s && s.status !== 'bad' ? h('button', { class: 'primary', onclick: () => open3D({ rel: a.rel, slots: info.slots, centerSlot: s.index, ro }) }, '🧊 3D view here') : null));
@@ -1113,10 +1166,14 @@ async function regionEditor(el, a) {
     const inp = h('input', { type: 'file', onchange: async () => { const f = inp.files[0]; if (!f) return; guarded(async () => { const r = await api('/api/region/import?' + qs({ rel: a.rel, slot: i }), { raw: f }); toast(r.message); await afterWrite(a.rel); S.tab = 'editor'; renderMain(); }); } }); inp.click();
   }
   const bad = info.slots.filter(s => s.status === 'bad');
+  const zoomLabel = h('span', { class: 'muted mono', style: 'min-width:44px;text-align:center' }, '1×');
+  function updateZoomLabel() { zoomLabel.textContent = V.z.toFixed(V.z < 10 ? 1 : 0) + '×' + (PXB() >= 6 ? ' · blocks' : ''); }
   const sizeSel = h('select', { onchange: () => { S.regionCell = Number(sizeSel.value); renderMain(); } }, [[14, 'small'], [18, 'medium'], [22, 'large'], [28, 'extra large']].map(([v, l]) => h('option', { value: v, selected: v === CELL }, 'map size: ' + l)));
   el.append(h('div', { class: 'row' },
-    h('span', { class: 'muted' }, `region (${info.rx}, ${info.rz}) · world x ${rx * 512}…${rx * 512 + 511}, z ${rz * 512}…${rz * 512 + 511} · ${info.slots.length} chunks · ${bad.length} damaged · north is up`),
+    h('span', { class: 'muted' }, `region (${info.rx}, ${info.rz}) · world x ${rx * 512}…${rx * 512 + 511}, z ${rz * 512}…${rz * 512 + 511} · ${info.slots.length} chunks · ${bad.length} damaged · north is up · mouse wheel = zoom, drag = pan, zoom in to pick single blocks`),
     sizeSel,
+    h('span', { style: 'display:inline-flex;gap:4px;align-items:center' }, h('button', { class: 'small', title: 'Zoom out', onclick: () => zoomBy(1 / 1.6) }, '−'), zoomLabel, h('button', { class: 'small', title: 'Zoom in', onclick: () => zoomBy(1.6) }, '+'), h('button', { class: 'small', title: 'Show the whole region', onclick: () => { V.z = 1; V.x = 0; V.y = 0; updateZoomLabel(); draw(); } }, 'whole region'),
+      h('button', { class: 'small', title: 'Zoom until single blocks can be picked, around the selected chunk / block', onclick: () => { const t = sel.block || (sel.cell ? { x: (sel.cell[0] + rx * 32) * 16 + 8, z: (sel.cell[1] + rz * 32) * 16 + 8 } : { x: rx * 512 + 256, z: rz * 512 + 256 }); zoomToBlock(t, 12); } }, 'pick blocks')),
     bad.length && !ro ? h('button', { class: 'danger', onclick: () => removeChunks(bad.map(s => s.index)) }, 'Remove all damaged') : null,
     h('button', { onclick: () => { const t = slots.get(sel.slot) && slots.get(sel.slot).status !== 'bad' ? sel.slot : (info.slots.find(x => x.status !== 'bad') || {}).index; if (t == null) toast('No intact chunk to show.', 'err'); else open3D({ rel: a.rel, slots: info.slots, centerSlot: t, ro }); } }, '🧊 3D view'),
     h('button', { onclick: () => guarded(async () => { const r = await api('/api/region/census?' + qs({ rel: a.rel })); modal(h('div', {}, h('h2', {}, 'Blocks in the whole region'), h('div', { class: 'sub' }, 'Counts of every block type. Unknown "block#…" ids come from removed mods.'), h('div', { style: 'max-height:55vh;overflow:auto' }, censusTable(r, null)), h('div', { class: 'row', style: 'justify-content:flex-end;margin-top:10px' }, h('button', { onclick: closeModal }, 'Close')))); }) }, 'Block statistics…')));
@@ -1136,6 +1193,7 @@ async function regionEditor(el, a) {
   }
   el.append(legend, elseBox, h('div', { style: 'display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start' }, cv, side));
   drawLegend(); draw();
+  if (S.regionFocus) { const f = S.regionFocus; S.regionFocus = null; if (Math.floor(f.x / 512) === rx && Math.floor(f.z / 512) === rz) { sel.block = { x: Math.floor(f.x), z: Math.floor(f.z) }; zoomToBlock(sel.block, 14); const cs = byCell.get(cellKey(Math.floor(f.x / 16) - rx * 32, Math.floor(f.z / 16) - rz * 32)); sel.cell = [Math.floor(f.x / 16) - rx * 32, Math.floor(f.z / 16) - rz * 32]; showBlock(sel.block, cs); } }
   terrain = new Image(); terrain.onload = draw; terrain.src = url('/api/region/topdown', { rel: a.rel });
   api('/api/region/markers?' + qs({ rel: a.rel })).then(r => {
     markers = r.markers; explored = r.explored || {}; elsewhere = r.elsewhere || [];

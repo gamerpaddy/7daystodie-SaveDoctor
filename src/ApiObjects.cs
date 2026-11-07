@@ -39,6 +39,27 @@ public static partial class Api
             if (y < 0 || y > 255) throw new InvalidOperationException("y must be 0–255");
             int lx = x & 15, lz = z & 15, i = d.Idx(lx, y, lz);
             uint v = d.Blocks[i]; int type = ChunkDoc.TypeOf(v);
+            object? redirectedFrom = null;
+            // the other half of a multi-part block (vending machine, bed, door …) holds no data: show its main block instead
+            if (BlockState.Child(v) && d.TileEntityAt(lx, y, lz) == null)
+            {
+                var (ox, oy, oz) = WorldEdit.ParentOffset(v);
+                int nx = x + ox, ny = y + oy, nz = z + oz;
+                if (ny >= 0 && ny <= 255)
+                {
+                    try
+                    {
+                        var d2 = NeedChunk(we, nx, nz, false);
+                        int i2 = d2.Idx(nx & 15, ny, nz & 15);
+                        if (ChunkDoc.TypeOf(d2.Blocks[i2]) != 0 && !BlockState.Child(d2.Blocks[i2]))
+                        {
+                            redirectedFrom = new { x, y, z };
+                            x = nx; y = ny; z = nz; d = d2; lx = x & 15; lz = z & 15; i = i2; v = d.Blocks[i]; type = ChunkDoc.TypeOf(v);
+                        }
+                    }
+                    catch (InvalidOperationException) { }
+                }
+            }
             var def = we.DefOf(type);
             var tex = d.TexturesAt(i);
             var block = new
@@ -71,7 +92,7 @@ public static partial class Api
                     if (id > 0 && (g.ItemNames.ContainsKey(id) || g.BlockNames.ContainsKey(id))) names[id] = g.NameOf(id);
                 }
             var econ = names.Keys.Select(k => (k, e: g.EconomyOf(k))).Where(t => t.e != null).ToDictionary(t => t.k, t => new[] { (double)t.e!.Value.value, t.e.Value.bundle });
-            return J(new { x, y, z, cx = d.X, cz = d.Z, tailParsed = d.TailParsed, tailNote = d.TailNote, block, te, entities = near, names, econ });
+            return J(new { x, y, z, cx = d.X, cz = d.Z, tailParsed = d.TailParsed, tailNote = d.TailNote, redirectedFrom, block, te, entities = near, names, econ });
         });
 
         app.MapPost("/api/world/block-state", async (HttpContext http) =>
@@ -211,6 +232,29 @@ public static partial class Api
             string msg; lock (writeLock) msg = WorldCheck.Fix(c, b.GetProperty("code").GetString()!);
             Log("", "world-check-fix", msg);
             return J(new { ok = true, message = msg });
+        });
+
+        // one block column of the region view: what is stacked at x,z
+        app.MapGet("/api/world/column", (HttpContext http) =>
+        {
+            var c = Need(); var g = c.Game;
+            int x = int.Parse(Q(http, "x")), z = int.Parse(Q(http, "z"));
+            var we = new WorldEdit(c);
+            var d = NeedChunk(we, x, z, false);
+            int lx = x & 15, lz = z & 15;
+            var runs = new List<object>(); int top = -1, runType = -1, runTop = 0;
+            for (int y = 255; y >= -1; y--)
+            {
+                int t = y >= 0 ? ChunkDoc.TypeOf(d.Blocks[d.Idx(lx, y, lz)]) : 0;
+                if (t != runType)
+                {
+                    if (runType > 0) runs.Add(new { y2 = runTop, y1 = y + 1, id = runType, name = g.NameOf(runType) });
+                    runType = t; runTop = y; if (t > 0 && top < 0) top = y;
+                }
+            }
+            var tes = d.TailParsed ? d.Tes.Where(t => t.HasPos && t.X == lx && t.Z == lz).OrderByDescending(t => t.Y).Select(t => new { y = t.Y, name = g.NameOf(ChunkDoc.TypeOf(d.Blocks[d.Idx(lx, t.Y, lz)])), kind = t.Composite ? "composite" : LegacyTe.TypeName(t.Type) }).ToList() : null;
+            var ents = d.EntRecs.Select((e, i) => (e, i)).Where(t => Math.Abs(t.e.E.PosX - x - 0.5) < 2 && Math.Abs(t.e.E.PosZ - z - 0.5) < 2).Select(t => new { t.i, name = g.EntityClassName(t.e.E.EntityClass), x = t.e.E.PosX, y = t.e.E.PosY, z = t.e.E.PosZ, index = t.i }).ToList();
+            return J(new { x, z, cx = d.X, cz = d.Z, lx, lz, top, runs, tes = (object?)tes ?? Array.Empty<object>(), entities = ents });
         });
 
         // ───────── drawn signs

@@ -5,6 +5,9 @@
   const { num, fld, fmtN } = WT;
   const txt = (obj, key, o = {}) => h('input', { type: 'text', value: obj[key] ?? '', style: o.style || 'width:180px', onchange: e => { obj[key] = e.target.value; o.on && o.on(); } });
   const chk = (obj, key, label, on) => h('label', { style: 'display:flex;gap:6px;align-items:center' }, h('input', { type: 'checkbox', checked: !!obj[key], onchange: e => { obj[key] = e.target.checked; on && on(); } }), label);
+  // the game stores lock passwords as the 32-bit "stable string hash" in hex (ILockable.GetHashForPassword) – never the password itself
+  const stableHash = s => { let h1 = 5381, h2 = 5381; for (let i = 0; i < s.length && s[i] !== '\0'; i += 2) { h1 = (Math.imul(h1, 33) ^ s.charCodeAt(i)) | 0; if (i === s.length - 1 || s[i + 1] === '\0') break; h2 = (Math.imul(h2, 33) ^ s.charCodeAt(i + 1)) | 0; } return ((h1 + Math.imul(h2, 1566083941)) | 0) >>> 0; };
+  WT.passwordHash = s => s.length ? stableHash(s).toString(16).toUpperCase().padStart(8, '0') : '';
   const emptyItem = () => ({ type: 0, useTimes: 0, quality: 0, meta: -1, metadata: [], stats: null, mods: [], cosmetics: [], flags: 0, ammo: 0, seed: 0, texture: null });
   const EMPTY = () => ({ count: 0, item: emptyItem() });
 
@@ -69,10 +72,11 @@
     const teEdit = te ? { owner: te.owner, features: {}, legacy: te.legacy ? JSON.parse(JSON.stringify(te.legacy)) : null } : null;
     if (te && te.features) for (const f of te.features) if (f.editable && f.kind !== 'storage' && f.kind !== 'marker') teEdit.features[f.hash] = JSON.parse(JSON.stringify(f.data));
     const FACES = ['Top', 'Bottom', 'North', 'South', 'West', 'East'];
+    const storageEdit = {};
 
     function render() {
       body.replaceChildren();
-      body.append(h('div', { class: 'muted mono' }, `x ${x}  y ${y}  z ${z}  ·  chunk ${r.cx}, ${r.cz}  ·  `, h('a', { href: '#', onclick: e => { e.preventDefault(); closeModal(); guarded(() => WT.gotoBlock(x, z)); } }, 'show in region view')));
+      body.append(h('div', { class: 'muted mono' }, `x ${x}  y ${y}  z ${z}  ·  chunk ${r.cx}, ${r.cz}  ·  `, r.redirectedFrom ? h('span', { class: 'warn' }, `part of a multi-part block – showing its main block (you picked ${r.redirectedFrom.x}, ${r.redirectedFrom.y}, ${r.redirectedFrom.z})  ·  `) : '', h('a', { href: '#', onclick: e => { e.preventDefault(); closeModal(); guarded(() => WT.gotoBlock(x, z)); } }, 'show in region view')));
       if (!b.id) { body.append(h('div', { class: 'card' }, 'There is no block at this position.')); }
       else {
         // block state
@@ -98,11 +102,24 @@
         if (te.composite) card.append(h('div', { class: 'row' }, h('span', { class: 'muted' }, 'Owner:'), plat(teEdit, 'owner')));
         for (const f of te.features || []) {
           const d = teEdit.features[f.hash]; const sec = h('div', { style: 'border-top:1px solid var(--line);padding:6px 0' }, h('b', {}, f.name));
-          if (f.kind === 'storage') sec.append(' ', h('button', { class: 'small', onclick: () => guarded(() => WT.openContainer(x, y, z)) }, 'Open container editor…'));
+          if (f.kind === 'storage' && f.data) {
+            const sd = storageEdit[f.hash] ||= JSON.parse(JSON.stringify(f.data)); const g = sd.grid;
+            const unopened = !g.playerOwned && !g.timeTouched && g.items.every(s => !(s.count > 0));
+            sec.append(h('span', { class: 'muted' }, ` ${g.width}×${g.height} slots · loot list "${sd.lootList || '–'}" · ` + (g.playerOwned ? 'placed by a player' : g.timeTouched ? 'opened before' : 'never opened')),
+              unopened ? h('div', { class: 'muted' }, 'Not opened yet: the game rolls this container\'s loot from its loot list the first time somebody opens it, so it holds nothing now. Putting items in here makes it count as opened.') : '',
+              stackTable(M, g.items, { fixedSize: true }),
+              h('div', { class: 'row' }, fld('Loot list', txt(sd, 'lootList', { style: 'width:200px' })), h('button', { class: 'primary', onclick: () => guarded(async () => { if (!WT.needWrite()) return; const res = await api('/api/world/container', { body: { x, y, z, grid: g, loot: sd.lootList || '' } }); toast(res.message); }) }, 'Save contents'),
+                !g.playerOwned && sd.lootList ? h('button', { class: 'small', title: 'Empty it and mark it unopened – new loot is rolled when somebody opens it', onclick: () => guarded(async () => { if (!WT.needWrite()) return; const res = await api('/api/world/container', { body: { x, y, z, grid: g, resetLoot: true } }); toast(res.message); closeModal(); }) }, 'Reset loot (re-roll)') : null));
+          }
+          else if (f.kind === 'storage') sec.append(h('span', { class: 'muted' }, ' – unknown storage layout, kept unchanged'));
           else if (f.kind === 'door' && d) sec.append(h('div', {}, chk(d, 'isOpen', 'Door is open')));
           else if (f.kind === 'landclaim' && d) sec.append(h('div', {}, chk(d, 'showBounds', 'Show claim bounds')));
           else if (f.kind === 'lockable' && d) {
-            sec.append(h('div', { class: 'row' }, chk(d, 'locked', 'Locked'), fld('Password hash (empty = no password)', txt(d, 'passwordHash', { style: 'width:240px' })), h('button', { class: 'small', onclick: () => { d.locked = false; d.passwordHash = ''; d.allowed = []; render(); } }, 'Clear lock & password')));
+            const pw = h('input', { type: 'text', placeholder: 'new password', style: 'width:150px' }); const verdict = h('span', { class: 'muted' }, '');
+            sec.append(h('div', { class: 'row' }, chk(d, 'locked', 'Locked'), fld('Stored password hash (empty = no password)', txt(d, 'passwordHash', { style: 'width:130px' })), h('button', { class: 'small', onclick: () => { d.locked = false; d.passwordHash = ''; d.allowed = []; render(); } }, 'Clear lock & password')),
+              h('div', { class: 'row' }, h('span', { class: 'muted' }, 'The game keeps only a 32-bit hash of the password, not the password. Type one to set it or to check a guess:'), pw,
+                h('button', { class: 'small', onclick: () => { if (!pw.value) return; d.passwordHash = WT.passwordHash(pw.value); d.locked = true; render(); } }, 'Set this password'),
+                h('button', { class: 'small', onclick: () => { verdict.textContent = !d.passwordHash ? 'no password is set' : WT.passwordHash(pw.value) === d.passwordHash ? '✓ matches' : '✗ does not match'; verdict.className = verdict.textContent[0] === '✓' ? 'ok' : 'muted'; } }, 'Check guess'), verdict));
             const al = h('div', {}); (d.allowed || []).forEach((a, i) => al.append(h('div', { class: 'row' }, plat(d.allowed, i), h('button', { class: 'small danger', onclick: () => { d.allowed.splice(i, 1); render(); } }, '✕'))));
             sec.append(h('div', { class: 'muted' }, 'Allowed users:'), al, h('button', { class: 'small', onclick: () => { (d.allowed ||= []).push({ flag: 1, platform: 'EOS', userId: '' }); render(); } }, '+ add user'));
           }
@@ -123,7 +140,7 @@
         if (te.legacy && teEdit.legacy) {
           const m = teEdit.legacy;
           if (te.legacyKind === 'vending') {
-            card.append(h('div', { class: 'row' }, chk(m, 'locked', 'Locked'), fld('Owner', plat(m, 'owner')), fld('Password hash', txt(m, 'passwordHash', { style: 'width:200px' })), fld('Rental ends (day)', num(m, 'rentalEndDay', { step: 1, style: 'width:90px' })), m.rentable ? fld('Next auto-rent (ticks)', num(m, 'nextAutoBuy', { step: 1, style: 'width:120px' })) : null));
+            card.append(h('div', { class: 'row' }, chk(m, 'locked', 'Locked'), fld('Owner', plat(m, 'owner')), fld('Password hash (game stores only a hash)', txt(m, 'passwordHash', { style: 'width:130px' })), h('button', { class: 'small', onclick: () => { const p = prompt('New password for this vending machine (leave empty to remove the password):'); if (p === null) return; m.passwordHash = WT.passwordHash(p); if (p) m.locked = true; render(); } }, 'Set password…'), fld('Rental ends (day)', num(m, 'rentalEndDay', { step: 1, style: 'width:90px' })), m.rentable ? fld('Next auto-rent (ticks)', num(m, 'nextAutoBuy', { step: 1, style: 'width:120px' })) : null));
             const al = h('div', {}); (m.allowed || []).forEach((a, i) => al.append(h('div', { class: 'row' }, plat(m.allowed, i), h('button', { class: 'small danger', onclick: () => { m.allowed.splice(i, 1); render(); } }, '✕'))));
             card.append(h('div', { class: 'muted' }, 'Allowed users:'), al, h('button', { class: 'small', onclick: () => { m.allowed.push({ flag: 1, platform: 'EOS', userId: '' }); render(); } }, '+ add user'), traderEditor(M, m.trader));
           } else if (te.legacyKind === 'workstation') {
@@ -159,6 +176,20 @@
   }
   WT.inspect = inspect;
 
+  /** What is stacked at one block column: surface, every block run from the top down, tile entities, entities nearby – with buttons to open each. */
+  WT.columnPanel = async function (x, z, opts = {}) {
+    const r = await api('/api/world/column?' + qs({ x, z }));
+    const yIn = h('input', { type: 'number', min: 0, max: 255, value: opts.y ?? (r.top >= 0 ? r.top : 64), style: 'width:70px' });
+    const run = y => r.runs.find(u => y <= u.y2 && y >= u.y1);
+    return h('div', {},
+      h('div', { class: 'muted' }, `chunk (${r.cx}, ${r.cz}) · local ${r.lx}, ${r.lz}` + (r.top >= 0 ? ` · surface y ${r.top}: ${r.runs.length ? r.runs[0].name : ''}` : ' · empty column')),
+      h('div', { class: 'row' }, 'y', yIn, h('button', { class: 'primary', onclick: () => guarded(() => inspect(x, Number(yIn.value), z)) }, '🔍 Inspect this block'), r.top >= 0 ? h('button', { onclick: () => { yIn.value = r.top; guarded(() => inspect(x, r.top, z)); } }, 'Surface block') : '', ...(opts.extra || [])),
+      r.tes.length ? h('div', {}, h('h4', { style: 'margin:8px 0 4px' }, 'Tile entities in this column'), r.tes.map(t => h('div', { class: 'row', style: 'margin:2px 0' }, h('span', { class: 'mono' }, 'y ' + t.y), h('span', {}, t.name), h('span', { class: 'muted' }, t.kind), h('button', { class: 'small', onclick: () => guarded(() => inspect(x, t.y, z)) }, 'Open')))) : '',
+      r.entities.length ? h('div', {}, h('h4', { style: 'margin:8px 0 4px' }, 'Entities within 2 blocks'), r.entities.map(e => h('div', { class: 'row', style: 'margin:2px 0' }, h('span', {}, e.name), h('span', { class: 'muted mono' }, `${e.x.toFixed(1)}, ${e.y.toFixed(1)}, ${e.z.toFixed(1)}`), h('button', { class: 'small', onclick: () => guarded(() => openEntity(r.cx, r.cz, e.index)) }, 'Open')))) : '',
+      h('h4', { style: 'margin:8px 0 4px' }, 'Blocks from the top down (also below ground)'),
+      h('table', {}, r.runs.slice(0, 60).map(u => h('tr', { style: opts.y != null && run(opts.y) === u ? 'background:rgba(255,214,10,.15)' : '' }, h('td', { class: 'mono' }, u.y1 === u.y2 ? 'y ' + u.y1 : `y ${u.y2} … ${u.y1}`), h('td', {}, u.name), h('td', {}, h('button', { class: 'small', onclick: () => guarded(() => inspect(x, u.y2, z)) }, 'Inspect'))))));
+  };
+
   // ───────── entity editor
   async function openEntity(cx, cz, index) {
     const r = await api('/api/world/entity?' + qs({ cx, cz, index }));
@@ -176,6 +207,7 @@
         h('div', { class: 'row' }, fld('X', num(ed, 'x')), fld('Y', num(ed, 'y')), fld('Z', num(ed, 'z')), fld('Lifetime', num(ed, 'lifetime')), h('a', { href: '#', style: 'align-self:end', onclick: ev => { ev.preventDefault(); closeModal(); guarded(() => WT.gotoBlock(Math.floor(e.x), Math.floor(e.z))); } }, 'show in region view')));
       if (item) body.append(h('h4', {}, 'Item on the ground'), stackTable(M, [item], { fixedSize: true }));
       if (e.kind === 'EntityLootContainer' && e.hasMirror) body.append(h('div', { class: 'row' }, fld('Loot list', txt(loot, 'v', { style: 'width:200px' })), fld('Display name', txt(loot, 'n', { style: 'width:200px' }))));
+      if (inv && !inv.timeTouched && !inv.items.some(s => s.count > 0)) body.append(h('div', { class: 'muted' }, 'Never opened: the game rolls the loot of airdrops and loot bags when somebody opens them for the first time, so nothing is stored yet. Adding items here marks it as opened.'));
       if (inv) body.append(h('h4', {}, `Inventory (${inv.width}×${inv.height} slots${e.hasMirror ? ', stored twice – both copies are kept in sync' : ''})`), stackTable(M, inv.items, { fixedSize: true }));
       if (trader) body.append(h('h4', {}, 'Trader stock'), traderEditor(M, trader));
       body.append(h('div', { class: 'row', style: 'justify-content:flex-end;margin-top:12px' },

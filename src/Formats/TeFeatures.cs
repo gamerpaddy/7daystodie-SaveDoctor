@@ -73,6 +73,7 @@ public static class TeFeatures
             v.Data = model;
             v.Editable = BinUtil.SameBytes(Encode(v.Kind, model, g) ?? Array.Empty<byte>(), f.Payload);
             if (!v.Editable) v.Kind = "raw";
+            else if (model is StorageData sd) v.Data = new { lootList = sd.LootList, grid = sd.Grid };      // StorageData itself uses fields, which the JSON options skip
         }
         catch (Exception ex) when (ex is ParseFail || ex is EndOfStreamException || ex is InvalidDataException) { v.Kind = "raw"; v.Data = null; }
         return v;

@@ -109,7 +109,7 @@
     const cam = { yaw: 0.7, pitch: 0.6, dist: 60, target: [8, 40, -8] };
     let dirty = true, meshDirty = true;
     // block editing state
-    const E = { tool: 'orbit', type: 0, rot: 0, brush: 1, fillMode: 'any', pending: [], undo: [], boxA: null, sel: null, hover: null, palette: null, overlayN: 0 };
+    const E = { picked: null, tool: 'orbit', type: 0, rot: 0, brush: 1, fillMode: 'any', pending: [], undo: [], boxA: null, sel: null, hover: null, palette: null, overlayN: 0 };
 
     const fmtSel = h('select', {}, h('option', { value: 'glb' }, 'glTF binary (.glb) – Blender, Unity, Godot, web'), h('option', { value: 'obj' }, 'Wavefront OBJ + MTL (.zip)'), h('option', { value: 'ply' }, 'PLY with vertex colours (.ply)'));
     const legend = h('div', { style: 'max-height:240px;overflow:auto;margin-top:6px' });
@@ -228,6 +228,7 @@
       const W = (x, z) => [x + S3.x0, z + S3.z0];
       if (E.tool === 'pick') { if (hit.id) { E.type = hit.id; updateEditUi(); } return; }
       if (E.tool === 'inspect') { if (window.WT && WT.inspect) WT.inspect(hit.x + S3.x0, hit.y, hit.z + S3.z0).catch(er => toast(er.message, 'err')); return; }
+
       if (E.tool === 'add' || E.tool === 'remove' || E.tool === 'paint') {
         const base = E.tool === 'add' ? [hit.px, hit.py, hit.pz] : [hit.x, hit.y, hit.z];
         const [x1, y1, z1, x2, y2, z2] = brushBox(...base);
@@ -247,6 +248,20 @@
         queueOp({ op: 'fill', ...box, type: E.type, rot: E.rot, only: E.fillMode });
         overlay();
       }
+    }
+    // click a block in the plain view mode: show its column (every block down to bedrock), tile entities and entities, open any of them
+    const pickBox = h('div', { class: 'card', style: 'margin-top:8px;display:none' });
+    async function pickBlock(hit) {
+      const wx = hit.x + S3.x0, wz = hit.z + S3.z0;
+      E.picked = { x: wx, y: hit.y, z: wz }; overlay();
+      pickBox.style.display = ''; pickBox.replaceChildren(h('b', {}, `Block ${wx}, ${hit.y}, ${wz}`), h('div', { class: 'muted' }, 'loading…'));
+      try { pickBox.scrollIntoView({ block: 'nearest' }); } catch { }
+      try {
+        const el = await WT.columnPanel(wx, wz, { y: hit.y });
+        if (!E.picked || E.picked.x !== wx || E.picked.z !== wz) return;
+        pickBox.replaceChildren(h('div', { style: 'display:flex;justify-content:space-between;align-items:center' }, h('b', {}, `Block ${wx}, ${hit.y}, ${wz}`), h('button', { class: 'small', onclick: () => { E.picked = null; pickBox.style.display = 'none'; overlay(); } }, '✕')),
+          h('div', { class: 'muted', style: 'font-size:12px' }, 'Hide blocks or move the clipping planes to reach what is underground – or pick any layer from the list below.'), el);
+      } catch (er) { pickBox.replaceChildren(h('div', { class: 'err' }, er.message)); }
     }
     // outline overlay (hover cell, pending corner, selection)
     const lineBuf = new ArrayBuffer(1 << 16), lf = new Float32Array(lineBuf), lu = new Uint32Array(lineBuf);
@@ -268,6 +283,7 @@
         else if (E.tool === 'paint') { const [a, b, c, d, e, f] = brushBox(hv.x, hv.y, hv.z); box(a, b, c, d, e, f, [90, 170, 255]); }
         else box(hv.x, hv.y, hv.z, hv.x, hv.y, hv.z, [255, 255, 255]);
       }
+      if (E.picked) box(E.picked.x - S3.x0, E.picked.y, E.picked.z - S3.z0, E.picked.x - S3.x0, E.picked.y, E.picked.z - S3.z0, [255, 214, 10]);
       if (E.boxA) box(E.boxA[0], E.boxA[1], E.boxA[2], E.boxA[0], E.boxA[1], E.boxA[2], [255, 214, 64]);
       if (E.sel) box(E.sel.x1 - S3.x0, E.sel.y1, E.sel.z1 - S3.z0, E.sel.x2 - S3.x0, E.sel.y2, E.sel.z2 - S3.z0, [64, 220, 255]);
       E.overlayN = n;
@@ -285,7 +301,7 @@
       h('h3', {}, 'Export this view as a 3D model'),
       h('div', { class: 'row' }, fmtSel, h('button', { class: 'primary', onclick: () => guarded(async () => exportMesh(fmtSel.value)) }, '⬇ Export')),
       h('div', { class: 'muted', style: 'font-size:12px' }, 'Exports exactly what you see (clipping, hidden blocks, area). One material per block type, 1 unit = 1 block, Y up, centred on the loaded area.'),
-      ...(ro ? [] : [editBox]),
+      ...(ro ? [] : [editBox, pickBox]),
       h('h3', {}, 'Blocks (click to hide / show)'), legend,
       h('div', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, 'Left-drag: orbit · right-drag / shift-drag: pan · wheel: zoom. Cut faces are closed automatically.'));
 
@@ -431,9 +447,9 @@
     window.addEventListener('mouseup', e => {
       const d = drag; drag = null;
       if (stopped) return;
-      if (d && !d.moved && !d.pan && E.tool !== 'orbit' && !ro && e.target === canvas) {
+      if (d && !d.moved && !d.pan && !ro && e.target === canvas) {
         const hit = cast(e);
-        if (hit) { try { editClick(hit); } catch (er) { toast(er.message, 'err'); } }
+        if (hit) { try { if (E.tool === 'orbit') pickBlock(hit); else editClick(hit); } catch (er) { toast(er.message, 'err'); } }
       }
     });
     window.addEventListener('mousemove', e => {

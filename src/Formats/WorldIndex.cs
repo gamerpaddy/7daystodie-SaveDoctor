@@ -127,10 +127,10 @@ public static class WorldIndexer
                     {
                         var er = d.EntRecs[ei];
                         var det = EntityTools.Describe(er, ei, g);
-                        string kind = det.Trader != null ? "trader" : det.DroppedItem != null ? "drop" : det.Kind == "EntityBackpack" ? "backpack" : det.Kind == "EntitySupplyCrate" ? "airdrop" : det.Kind == "EntityLootContainer" ? "lootbag" : det.Inventory != null ? "carrying" : "";
+                        string kind = det.Trader != null || det.Kind.Contains("Trader", StringComparison.OrdinalIgnoreCase) || det.Kind.Contains("NPC", StringComparison.OrdinalIgnoreCase) || det.Name.StartsWith("npc", StringComparison.OrdinalIgnoreCase) ? "trader" : det.DroppedItem != null ? "drop" : det.Kind == "EntityBackpack" ? "backpack" : det.Kind == "EntitySupplyCrate" ? "airdrop" : det.Kind == "EntityLootContainer" ? "lootbag" : det.Inventory != null ? "carrying" : "";
                         if (kind == "") continue;
                         int used = det.Inventory?.Items.Count(x => x.Count > 0) ?? 0;
-                        string detail = kind == "drop" ? g.NameOf(det.DroppedItem!.Item.Type) + " ×" + det.DroppedItem.Count : kind == "trader" ? $"{det.Trader!.Primary.Count} stock entries, {det.Trader.AvailableMoney} coins" : $"{used}/{det.Inventory?.Items.Count ?? 0} slots used";
+                        string detail = kind == "drop" ? g.NameOf(det.DroppedItem!.Item.Type) + " ×" + det.DroppedItem.Count : kind == "trader" ? (det.Trader == null ? "NPC without trader data" : $"{det.Trader.Primary.Count} stock entries, {det.Trader.AvailableMoney} coins") : $"{used}/{det.Inventory?.Items.Count ?? 0} slots used";
                         objs.Add(new ObjRec { Kind = kind, Name = det.Name, Detail = detail, X = (int)Math.Floor(det.X), Y = (int)Math.Floor(det.Y), Z = (int)Math.Floor(det.Z), Cx = d.X, Cz = d.Z, Index = ei, Count = kind == "drop" ? det.DroppedItem!.Count : used, Flag = !er.Editable });
                     }
                     foreach (var te in d.Tes)
@@ -140,7 +140,7 @@ public static class WorldIndexer
                             int wx = d.X * 16 + te.X, wz = d.Z * 16 + te.Z;
                             switch (te.Legacy)
                             {
-                                case VendingM vm: objs.Add(new ObjRec { Kind = "vending", Name = "trader " + vm.Trader.TraderId, Detail = $"{vm.Trader.Primary.Count} stock entries, {vm.Trader.AvailableMoney} coins" + (vm.Rentable ? ", rentable" : "") + (vm.Locked ? ", locked" : ""), X = wx, Y = te.Y, Z = wz, Count = vm.Trader.Primary.Count, Owner = vm.Owner?.UserId, Flag = vm.Locked }); break;
+                                case VendingM vm: objs.Add(new ObjRec { Kind = "vending", Name = g.NameOf((int)(d.Blocks[d.Idx(te.X, te.Y, te.Z)] & 0xFFFF)), Detail = (vm.Trader.TraderId == 3 ? "player vending machine" : "vending machine, trader id " + vm.Trader.TraderId) + $", {vm.Trader.Primary.Count} stock entries" + (vm.Rentable ? ", rentable" : "") + (vm.Locked ? ", locked" : ""), X = wx, Y = te.Y, Z = wz, Count = vm.Trader.Primary.Count, Owner = vm.Owner?.UserId, Flag = vm.Locked }); break;
                                 case WorkstationM wm: objs.Add(new ObjRec { Kind = "workstation", Name = g.NameOf(d.Blocks[d.Idx(te.X, te.Y, te.Z)] is var bv ? (int)(bv & 0xFFFF) : 0), Detail = $"{wm.Input.Count(x => x.Count > 0) + wm.Output.Count(x => x.Count > 0) + wm.Fuel.Count(x => x.Count > 0)} items, {(wm.IsBurning ? "burning" : "idle")}, queue {wm.Queue.Count(q => q.HasRecipe)}", X = wx, Y = te.Y, Z = wz, Count = wm.Input.Count(x => x.Count > 0) + wm.Output.Count(x => x.Count > 0), Flag = wm.IsBurning }); break;
                                 case ForgeM fm: objs.Add(new ObjRec { Kind = "forge", Name = g.NameOf((int)(d.Blocks[d.Idx(te.X, te.Y, te.Z)] & 0xFFFF)), Detail = $"metal {fm.MetalInForge}", X = wx, Y = te.Y, Z = wz, Count = fm.Input.Count(x => x.Count > 0) + fm.Fuel.Count(x => x.Count > 0) }); break;
                                 case CollectorM cm: objs.Add(new ObjRec { Kind = "collector", Name = g.NameOf((int)(d.Blocks[d.Idx(te.X, te.Y, te.Z)] & 0xFFFF)), Detail = $"{cm.Items.Count(x => x.Count > 0)} items", X = wx, Y = te.Y, Z = wz, Count = cm.Items.Count(x => x.Count > 0) }); break;

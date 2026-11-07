@@ -109,7 +109,11 @@ public static class RegionMap
         RegionIO.TryParseName(baseRel, out int rx, out int rz);
         var g = c.Game; var list = new List<Mk>();
         void Add(string type, string label, double x, double y, double z, string? detail = null, string? file = null)
-            => list.Add(new Mk { Type = type, Label = label, X = x, Y = y, Z = z, Detail = detail, File = file, Rx = (int)Math.Floor(x / 512), Rz = (int)Math.Floor(z / 512) });
+        {
+            // things placed on whole blocks are stored as the block's integer corner – draw them in the middle of that block
+            double off = type is "container" or "power" or "claim" or "bed" or "vending" or "backpack" or "spawn" or "waypoint" or "marker" ? 0.5 : 0;
+            list.Add(new Mk { Type = type, Label = label, X = x + off, Y = y, Z = z + off, Detail = detail, File = file, Rx = (int)Math.Floor(x / 512), Rz = (int)Math.Floor(z / 512) });
+        }
         var explored = new Dictionary<string, bool[]>();
 
         // players
